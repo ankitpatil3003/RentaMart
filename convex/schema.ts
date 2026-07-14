@@ -53,7 +53,9 @@ export default defineSchema({
     name: v.string(),
     stripeConnectAccountId: v.optional(v.string()),
     connectReady: v.boolean(),
-  }).index("by_name", ["name"]),
+  })
+    .index("by_name", ["name"])
+    .index("by_stripeConnectAccountId", ["stripeConnectAccountId"]),
 
   orgMembers: defineTable({
     orgId: v.id("orgs"),
@@ -72,6 +74,8 @@ export default defineSchema({
     state: v.string(),
     zip: v.string(),
     rentCents: v.number(),
+    depositCents: v.number(),
+    firstMonthCents: v.number(),
     beds: v.number(),
     baths: v.number(),
     photoUrls: v.array(v.string()),
@@ -94,7 +98,23 @@ export default defineSchema({
   })
     .index("by_renter", ["renterUserId"])
     .index("by_listing", ["listingId"])
-    .index("by_renter_and_listing", ["renterUserId", "listingId"]),
+    .index("by_renter_and_listing", ["renterUserId", "listingId"])
+    .index("by_listing_and_status", ["listingId", "status"]),
+
+  screeningReports: defineTable({
+    applicationId: v.id("applications"),
+    vendorRef: v.string(),
+    status: v.union(
+      v.literal("not_started"),
+      v.literal("pending"),
+      v.literal("complete"),
+      v.literal("failed"),
+    ),
+    summary: v.optional(v.string()),
+    missingDocs: v.array(v.string()),
+    requestedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  }).index("by_application", ["applicationId"]),
 
   payments: defineTable({
     applicationId: v.id("applications"),

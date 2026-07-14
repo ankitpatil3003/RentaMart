@@ -75,6 +75,34 @@ export const demo = mutation({
       org = (await ctx.db.get(orgId))!;
     }
 
+    const landlordClerkId = process.env.SEED_LANDLORD_CLERK_ID;
+    if (landlordClerkId) {
+      const landlord = await ctx.db
+        .query("users")
+        .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", landlordClerkId))
+        .unique();
+      if (landlord) {
+        const membership = await ctx.db
+          .query("orgMembers")
+          .withIndex("by_org_and_user", (q) =>
+            q.eq("orgId", org._id).eq("userId", landlord._id),
+          )
+          .unique();
+        if (!membership) {
+          await ctx.db.insert("orgMembers", {
+            orgId: org._id,
+            userId: landlord._id,
+            role: "org_owner",
+          });
+        }
+        if (!userHasRole(landlord, "org_owner")) {
+          await ctx.db.patch(landlord._id, {
+            roles: [...landlord.roles, "org_owner"],
+          });
+        }
+      }
+    }
+
     const fee = defaultApplicationFeeCents();
     const listingIds = [];
     for (const listing of DEMO_LISTINGS) {
@@ -85,6 +113,12 @@ export const demo = mutation({
           .collect()
       ).find((row) => row.title === listing.title);
       if (existing) {
+        if (existing.depositCents === 0 || existing.firstMonthCents === 0) {
+          await ctx.db.patch(existing._id, {
+            depositCents: existing.rentCents,
+            firstMonthCents: existing.rentCents,
+          });
+        }
         listingIds.push(existing._id);
         continue;
       }
@@ -96,6 +130,8 @@ export const demo = mutation({
         state: listing.state,
         zip: listing.zip,
         rentCents: listing.rentCents,
+        depositCents: listing.rentCents,
+        firstMonthCents: listing.rentCents,
         beds: listing.beds,
         baths: listing.baths,
         photoUrls: [...listing.photoUrls],

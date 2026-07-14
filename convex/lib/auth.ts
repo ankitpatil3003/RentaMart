@@ -1,7 +1,9 @@
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 type Ctx = QueryCtx | MutationCtx;
+
+export type OrgMemberRole = Doc<"orgMembers">["role"];
 
 export async function getIdentityOrNull(ctx: Ctx) {
   return await ctx.auth.getUserIdentity();
@@ -39,4 +41,34 @@ export function userHasRole(
   role: Doc<"users">["roles"][number],
 ): boolean {
   return user.roles.includes(role);
+}
+
+export async function requireOrgMember(
+  ctx: Ctx,
+  user: Doc<"users">,
+  orgId: Id<"orgs">,
+): Promise<Doc<"orgMembers">> {
+  const membership = await ctx.db
+    .query("orgMembers")
+    .withIndex("by_org_and_user", (q) =>
+      q.eq("orgId", orgId).eq("userId", user._id),
+    )
+    .unique();
+  if (!membership) {
+    throw new Error("Not a member of this organization");
+  }
+  return membership;
+}
+
+export async function requireOrgRole(
+  ctx: Ctx,
+  user: Doc<"users">,
+  orgId: Id<"orgs">,
+  roles: OrgMemberRole[],
+): Promise<Doc<"orgMembers">> {
+  const membership = await requireOrgMember(ctx, user, orgId);
+  if (!roles.includes(membership.role)) {
+    throw new Error("Insufficient organization permissions");
+  }
+  return membership;
 }

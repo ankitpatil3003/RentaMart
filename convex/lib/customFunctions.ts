@@ -20,3 +20,6 @@ export const authedMutation = customMutation(mutation, {
     return { ctx: { ...ctx, user }, args };
   },
 });
+
+// Org-scoped wrappers: use requireUser + requireOrgMember / requireOrgRole
+// from ./auth in orgs, listings, applications, and screening handlers.

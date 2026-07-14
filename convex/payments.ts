@@ -3,24 +3,28 @@ import {
   internalMutation,
   internalQuery,
   query,
+  type MutationCtx,
 } from "./_generated/server";
 import { requireUser } from "./lib/auth";
-import { appFeeIdempotencyKey } from "./lib/money";
+import {
+  appFeeIdempotencyKey,
+  depositIdempotencyKey,
+  firstMonthIdempotencyKey,
+} from "./lib/money";
 import { paymentStatus, paymentType } from "./schema";
+
+const paymentRecord = v.object({
+  _id: v.id("payments"),
+  type: paymentType,
+  status: paymentStatus,
+  amountCents: v.number(),
+  idempotencyKey: v.string(),
+  stripeCheckoutSessionId: v.optional(v.string()),
+});
 
 export const getByApplication = query({
   args: { applicationId: v.id("applications") },
-  returns: v.union(
-    v.object({
-      _id: v.id("payments"),
-      type: paymentType,
-      status: paymentStatus,
-      amountCents: v.number(),
-      idempotencyKey: v.string(),
-      stripeCheckoutSessionId: v.optional(v.string()),
-    }),
-    v.null(),
-  ),
+  returns: v.union(paymentRecord, v.null()),
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const application = await ctx.db.get(args.applicationId);
@@ -46,6 +50,116 @@ export const getByApplication = query({
   },
 });
 
+export const listForApplication = query({
+  args: { applicationId: v.id("applications") },
+  returns: v.array(paymentRecord),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const application = await ctx.db.get(args.applicationId);
+    if (!application || application.renterUserId !== user._id) {
+      return [];
+    }
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_application", (q) =>
+        q.eq("applicationId", args.applicationId),
+      )
+      .collect();
+    return payments.map((payment) => ({
+      _id: payment._id,
+      type: payment.type,
+      status: payment.status,
+      amountCents: payment.amountCents,
+      idempotencyKey: payment.idempotencyKey,
+      stripeCheckoutSessionId: payment.stripeCheckoutSessionId,
+    }));
+  },
+});
+
+export const getConnectDestinationForApplication = internalQuery({
+  args: { applicationId: v.id("applications") },
+  returns: v.union(
+    v.object({
+      stripeConnectAccountId: v.string(),
+      listingTitle: v.string(),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const application = await ctx.db.get(args.applicationId);
+    if (!application) return null;
+    const listing = await ctx.db.get(application.listingId);
+    if (!listing) return null;
+    const org = await ctx.db.get(listing.orgId);
+    if (!org?.stripeConnectAccountId || !org.connectReady) return null;
+    return {
+      stripeConnectAccountId: org.stripeConnectAccountId,
+      listingTitle: listing.title,
+    };
+  },
+});
+
+async function preparePaymentCheckout(
+  ctx: MutationCtx,
+  args: {
+    applicationId: import("./_generated/dataModel").Id<"applications">;
+    clerkUserId: string;
+    type: "application_fee" | "deposit" | "first_month";
+    allowedStatuses: Array<
+      | "submitted"
+      | "fee_pending"
+      | "fee_failed"
+      | "deposit_due"
+      | "first_month_due"
+    >;
+    idempotencyKey: string;
+    amountCents: number;
+    alreadyPaidMessage: string;
+    notReadyMessage: string;
+  },
+) {
+  const application = await ctx.db.get(args.applicationId);
+  if (!application) throw new Error("Application not found");
+  const user = await ctx.db.get(application.renterUserId);
+  if (!user || user.clerkUserId !== args.clerkUserId) {
+    throw new Error("Unauthorized");
+  }
+  if (!args.allowedStatuses.includes(application.status as never)) {
+    throw new Error(args.notReadyMessage);
+  }
+
+  const existing = await ctx.db
+    .query("payments")
+    .withIndex("by_idempotencyKey", (q) =>
+      q.eq("idempotencyKey", args.idempotencyKey),
+    )
+    .unique();
+  if (existing?.status === "succeeded") {
+    throw new Error(args.alreadyPaidMessage);
+  }
+  if (existing) {
+    return {
+      paymentId: existing._id,
+      amountCents: existing.amountCents,
+      idempotencyKey: existing.idempotencyKey,
+    };
+  }
+
+  const paymentId = await ctx.db.insert("payments", {
+    applicationId: args.applicationId,
+    type: args.type,
+    status: "created",
+    amountCents: args.amountCents,
+    currency: "usd",
+    idempotencyKey: args.idempotencyKey,
+  });
+  return {
+    paymentId,
+    amountCents: args.amountCents,
+    idempotencyKey: args.idempotencyKey,
+  };
+}
+
 export const prepareApplicationFeeCheckout = internalMutation({
   args: { applicationId: v.id("applications"), clerkUserId: v.string() },
   returns: v.object({
@@ -56,50 +170,71 @@ export const prepareApplicationFeeCheckout = internalMutation({
   handler: async (ctx, args) => {
     const application = await ctx.db.get(args.applicationId);
     if (!application) throw new Error("Application not found");
-    const user = await ctx.db.get(application.renterUserId);
-    if (!user || user.clerkUserId !== args.clerkUserId) {
-      throw new Error("Unauthorized");
-    }
-    if (
-      application.status !== "submitted" &&
-      application.status !== "fee_pending" &&
-      application.status !== "fee_failed"
-    ) {
-      throw new Error("Application is not ready for fee payment");
-    }
     const listing = await ctx.db.get(application.listingId);
     if (!listing) throw new Error("Listing not found");
 
-    const idempotencyKey = appFeeIdempotencyKey(args.applicationId);
-    const existing = await ctx.db
-      .query("payments")
-      .withIndex("by_idempotencyKey", (q) =>
-        q.eq("idempotencyKey", idempotencyKey),
-      )
-      .unique();
-    if (existing?.status === "succeeded") {
-      throw new Error("Application fee already paid");
-    }
-    if (existing) {
-      return {
-        paymentId: existing._id,
-        amountCents: existing.amountCents,
-        idempotencyKey: existing.idempotencyKey,
-      };
-    }
-    const paymentId = await ctx.db.insert("payments", {
+    return await preparePaymentCheckout(ctx, {
       applicationId: args.applicationId,
+      clerkUserId: args.clerkUserId,
       type: "application_fee",
-      status: "created",
+      allowedStatuses: ["submitted", "fee_pending", "fee_failed"],
+      idempotencyKey: appFeeIdempotencyKey(args.applicationId),
       amountCents: listing.applicationFeeCents,
-      currency: "usd",
-      idempotencyKey,
+      alreadyPaidMessage: "Application fee already paid",
+      notReadyMessage: "Application is not ready for fee payment",
     });
-    return {
-      paymentId,
-      amountCents: listing.applicationFeeCents,
-      idempotencyKey,
-    };
+  },
+});
+
+export const prepareDepositCheckout = internalMutation({
+  args: { applicationId: v.id("applications"), clerkUserId: v.string() },
+  returns: v.object({
+    paymentId: v.id("payments"),
+    amountCents: v.number(),
+    idempotencyKey: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const application = await ctx.db.get(args.applicationId);
+    if (!application) throw new Error("Application not found");
+    const listing = await ctx.db.get(application.listingId);
+    if (!listing) throw new Error("Listing not found");
+
+    return await preparePaymentCheckout(ctx, {
+      applicationId: args.applicationId,
+      clerkUserId: args.clerkUserId,
+      type: "deposit",
+      allowedStatuses: ["deposit_due"],
+      idempotencyKey: depositIdempotencyKey(args.applicationId),
+      amountCents: listing.depositCents,
+      alreadyPaidMessage: "Deposit already paid",
+      notReadyMessage: "Deposit is not due for this application",
+    });
+  },
+});
+
+export const prepareFirstMonthCheckout = internalMutation({
+  args: { applicationId: v.id("applications"), clerkUserId: v.string() },
+  returns: v.object({
+    paymentId: v.id("payments"),
+    amountCents: v.number(),
+    idempotencyKey: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const application = await ctx.db.get(args.applicationId);
+    if (!application) throw new Error("Application not found");
+    const listing = await ctx.db.get(application.listingId);
+    if (!listing) throw new Error("Listing not found");
+
+    return await preparePaymentCheckout(ctx, {
+      applicationId: args.applicationId,
+      clerkUserId: args.clerkUserId,
+      type: "first_month",
+      allowedStatuses: ["first_month_due"],
+      idempotencyKey: firstMonthIdempotencyKey(args.applicationId),
+      amountCents: listing.firstMonthCents,
+      alreadyPaidMessage: "First month rent already paid",
+      notReadyMessage: "First month rent is not due for this application",
+    });
   },
 });
 
@@ -111,19 +246,26 @@ export const markCheckoutOpen = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const payment = await ctx.db.get(args.paymentId);
+    if (!payment) throw new Error("Payment not found");
+
     await ctx.db.patch(args.paymentId, {
       status: "checkout_open",
       stripeCheckoutSessionId: args.stripeCheckoutSessionId,
     });
+
     const application = await ctx.db.get(args.applicationId);
+    if (!application) return null;
+
     if (
-      application &&
+      payment.type === "application_fee" &&
       (application.status === "submitted" ||
         application.status === "fee_failed" ||
         application.status === "fee_pending")
     ) {
       await ctx.db.patch(args.applicationId, { status: "fee_pending" });
     }
+
     return null;
   },
 });
@@ -168,6 +310,21 @@ export const recordStripeEvent = internalMutation({
     return null;
   },
 });
+
+function nextApplicationStatusOnPaymentSuccess(
+  paymentType: "application_fee" | "deposit" | "first_month",
+): "under_review" | "first_month_due" | "move_in_ready" | null {
+  switch (paymentType) {
+    case "application_fee":
+      return "under_review";
+    case "deposit":
+      return "first_month_due";
+    case "first_month":
+      return "move_in_ready";
+    default:
+      return null;
+  }
+}
 
 export const applyStripeCheckoutEvent = internalMutation({
   args: {
@@ -248,7 +405,10 @@ export const applyStripeCheckoutEvent = internalMutation({
         stripePaymentIntentId: args.paymentIntentId,
         stripeCheckoutSessionId: args.sessionId,
       });
-      await ctx.db.patch(payment.applicationId, { status: "fee_paid" });
+      const nextStatus = nextApplicationStatusOnPaymentSuccess(payment.type);
+      if (nextStatus) {
+        await ctx.db.patch(payment.applicationId, { status: nextStatus });
+      }
     } else if (failed) {
       await ctx.db.patch(payment._id, {
         status: "failed",
@@ -257,6 +417,7 @@ export const applyStripeCheckoutEvent = internalMutation({
       });
       const application = await ctx.db.get(payment.applicationId);
       if (
+        payment.type === "application_fee" &&
         application &&
         (application.status === "fee_pending" ||
           application.status === "submitted")

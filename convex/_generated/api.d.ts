@@ -16,8 +16,11 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_customFunctions from "../lib/customFunctions.js";
 import type * as lib_money from "../lib/money.js";
 import type * as listings from "../listings.js";
+import type * as orgs from "../orgs.js";
+import type * as orgsActions from "../orgsActions.js";
 import type * as payments from "../payments.js";
 import type * as paymentsActions from "../paymentsActions.js";
+import type * as screening from "../screening.js";
 import type * as seed from "../seed.js";
 import type * as users from "../users.js";
 
@@ -36,8 +39,11 @@ declare const fullApi: ApiFromModules<{
   "lib/customFunctions": typeof lib_customFunctions;
   "lib/money": typeof lib_money;
   listings: typeof listings;
+  orgs: typeof orgs;
+  orgsActions: typeof orgsActions;
   payments: typeof payments;
   paymentsActions: typeof paymentsActions;
+  screening: typeof screening;
   seed: typeof seed;
   users: typeof users;
 }>;
