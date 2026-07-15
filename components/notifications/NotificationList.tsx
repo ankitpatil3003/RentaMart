@@ -16,10 +16,15 @@ export function NotificationList({
 }: {
   orgId?: Id<"orgs">;
 }) {
-  const notifications = useQuery(
-    orgId ? api.notifications.listForOrg : api.notifications.listMine,
-    orgId ? { orgId } : {},
+  const mine = useQuery(
+    api.notifications.listMine,
+    orgId ? "skip" : {},
   );
+  const forOrg = useQuery(
+    api.notifications.listForOrg,
+    orgId ? { orgId } : "skip",
+  );
+  const notifications = orgId ? forOrg : mine;
   const markRead = useMutation(api.notifications.markRead);
   const markAllRead = useMutation(api.notifications.markAllRead);
   const [isPending, startTransition] = useTransition();
