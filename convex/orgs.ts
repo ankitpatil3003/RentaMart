@@ -58,7 +58,15 @@ export const listMine = query({
   args: {},
   returns: v.array(orgSummary),
   handler: async (ctx) => {
-    const user = await requireUser(ctx);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
+      .unique();
+    if (!user) return [];
+
     const memberships = await ctx.db
       .query("orgMembers")
       .withIndex("by_user", (q) => q.eq("userId", user._id))

@@ -41,16 +41,21 @@ npm run dev:web
 
 Use `npx convex dev` for development. Do not use `npx convex deploy` unless promoting to production.
 
-4. Stripe CLI webhook forward:
+4. Stripe CLI webhook forward (required for status updates):
 
 ```bash
-stripe listen --forward-to http://127.0.0.1:3211/stripe/webhook
+# Use your Convex HTTP site URL from the dashboard / .env.local
+# Example: https://content-bison-817.convex.site/stripe/webhook
+stripe listen --forward-to https://YOUR_DEPLOYMENT.convex.site/stripe/webhook
 ```
 
 ```bash
 npx convex env set STRIPE_WEBHOOK_SECRET whsec_...
 npx convex env set STRIPE_SECRET_KEY sk_test_...
+npx convex env set NEXT_PUBLIC_APP_URL http://localhost:3000
 ```
+
+Keep `stripe listen` running while testing payments. Without it, Checkout can succeed in Stripe but your application status will stay stuck until you click **Refresh payment status** on the application page.
 
 5. Seed demo listings:
 
@@ -82,7 +87,9 @@ npx convex env set GROQ_API_KEY gsk_...
 1. Renter pays application fee (platform) → application `under_review`
 2. Landlord approves → `deposit_due`
 3. Renter pays deposit (Connect destination) → `first_month_due`
-4. Renter pays first month (Connect destination) → `move_in_ready`
+4. Renter pays first month (Connect destination) → `qualified`
+5. Landlord selects best applicant (not first-come-first-served) → winner `move_in_ready`, listing unpublished, others `refund_eligible` (deposit/first month refunded automatically; application fee non-refundable)
+6. Landlord confirms move-in → `moved`
 
 Webhooks own paid state. UI never marks payments paid alone.
 
@@ -107,12 +114,45 @@ Public smoke tests run without Stripe. Full paths:
 - `E2E_FULL=1` Layer 1 fee path
 - `E2E_LAYER2=1` Layer 2 through move_in_ready
 - `E2E_LAYER2_WEBHOOK_REPLAY=1` deposit replay
+- Layer 3 smoke (`e2e/layer3-smoke.spec.ts`) runs by default (auth redirects)
+- Layer 4 smoke (`e2e/layer4-smoke.spec.ts`) landlord applications auth
+- Layer 5 smoke (`e2e/layer5-smoke.spec.ts`) notifications auth
 
 ## Layers
 
 - Layer 1: renter search, apply, application fee
 - Layer 2: landlord portal, Connect, approve/deny, deposit/first month
-- Layer 3: messaging, rent schedule, maintenance (not built)
+- Layer 3: messaging, rent schedule, maintenance (tenant ops after move-in)
+- Layer 4: competitive selection, refunds, move-in confirmation
+- Layer 5: in-app notifications for application status changes
+
+## Layer 5 notifications
+
+In-app notifications for renters and landlords when application status changes:
+
+- **Renter:** approved, qualified, selected, not selected, refund completed, denied
+- **Landlord:** application fee paid, applicant qualified, tenant selected, moved in
+
+Routes: `/notifications` (renter), `/landlord/notifications?orgId=...` (landlord). Unread badges appear in the site header and landlord nav.
+
+## Layer 4 competitive selection
+
+Multiple applicants can pay deposit and first month on the same listing. The landlord chooses the most qualified tenant (US norm: not first-come-first-served).
+
+- **Qualified:** All required move-in payments complete; awaiting landlord selection
+- **Select tenant:** Winner becomes move-in ready (lease created); listing is unpublished; non-selected applicants who paid deposit/first month become refund eligible (refunds process automatically via Stripe)
+- **Moved:** Landlord confirms keys handed over
+- **Application fee:** Non-refundable (screening performed)
+
+## Layer 3 tenant ops
+
+After an application reaches **move-in ready**, RentaMart creates an active lease and seeds monthly rent charges.
+
+- **Messages** (`/messages`): renter ↔ landlord chat per application
+- **Rent** (`/rent`): pay monthly rent via Stripe Connect Checkout (webhook truth)
+- **Maintenance** (`/maintenance`): renters submit requests; landlords update status under `/landlord/maintenance`
+
+Landlord views: Messages, Rent, and Maintenance tabs in the landlord portal (require `orgId` query param).
 
 ## Commit hygiene
 

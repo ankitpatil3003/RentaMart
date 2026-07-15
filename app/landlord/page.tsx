@@ -20,12 +20,26 @@ export default function LandlordDashboardPage() {
     landlordApi.applications.listInboxForOrg,
     orgId ? { orgId } : "skip",
   );
+  const appStats = useQuery(
+    landlordApi.applications.getOrgStats,
+    orgId ? { orgId } : "skip",
+  );
+  const unreadNotifications = useQuery(
+    landlordApi.notifications.unreadCount,
+    orgId ? { orgId } : "skip",
+  );
 
   if (!orgId) {
     return <p className="text-neutral-600">Select an organization.</p>;
   }
 
-  if (org === undefined || listings === undefined || inbox === undefined) {
+  if (
+    org === undefined ||
+    listings === undefined ||
+    inbox === undefined ||
+    appStats === undefined ||
+    unreadNotifications === undefined
+  ) {
     return <p className="text-neutral-600">Loading dashboard…</p>;
   }
 
@@ -69,15 +83,39 @@ export default function LandlordDashboardPage() {
           </Link>
         </div>
         <div className="border border-neutral-200 bg-white/70 p-5">
-          <p className="text-sm text-neutral-500">Inbox</p>
+          <p className="text-sm text-neutral-500">Applications</p>
           <p className="mt-2 text-lg text-neutral-900">
-            {inbox.length} in review
+            {appStats.total} total · {inbox.length} need review
           </p>
+          {appStats.qualified > 0 ? (
+            <p className="mt-1 text-sm text-amber-800">
+              {appStats.qualified} qualified — ready to select
+            </p>
+          ) : null}
+          {appStats.refundEligible > 0 ? (
+            <p className="mt-1 text-sm text-neutral-600">
+              {appStats.refundEligible} awaiting refund
+            </p>
+          ) : null}
           <Link
             href={withOrgId("/landlord/applications", orgId)}
             className="mt-3 inline-block text-sm text-neutral-700 underline"
           >
-            Review applications
+            View all applications
+          </Link>
+        </div>
+        <div className="border border-neutral-200 bg-white/70 p-5">
+          <p className="text-sm text-neutral-500">Notifications</p>
+          <p className="mt-2 text-lg text-neutral-900">
+            {unreadNotifications > 0
+              ? `${unreadNotifications} unread`
+              : "All caught up"}
+          </p>
+          <Link
+            href={withOrgId("/landlord/notifications", orgId)}
+            className="mt-3 inline-block text-sm text-neutral-700 underline"
+          >
+            View notifications
           </Link>
         </div>
         <div className="border border-neutral-200 bg-white/70 p-5">

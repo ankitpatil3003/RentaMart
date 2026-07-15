@@ -1,9 +1,8 @@
 "use client";
 
 import { ClerkProvider, useAuth } from "@clerk/nextjs";
-import { ConvexReactClient } from "convex/react";
+import { ConvexReactClient, useConvexAuth, useMutation } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { useMutation } from "convex/react";
 import { useEffect, type ReactNode } from "react";
 import { api } from "../convex/_generated/api";
 
@@ -15,13 +14,14 @@ if (!convexUrl) {
 const convex = new ConvexReactClient(convexUrl);
 
 function EnsureUser({ children }: { children: ReactNode }) {
-  const { isSignedIn } = useAuth();
+  // Wait until Convex has validated the Clerk JWT, not only Clerk session.
+  const { isAuthenticated, isLoading } = useConvexAuth();
   const ensureUser = useMutation(api.users.ensureUser);
 
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (isLoading || !isAuthenticated) return;
     void ensureUser({});
-  }, [isSignedIn, ensureUser]);
+  }, [isAuthenticated, isLoading, ensureUser]);
 
   return children;
 }

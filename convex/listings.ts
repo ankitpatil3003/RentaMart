@@ -92,12 +92,34 @@ export const getById = query({
       photoUrls: v.array(v.string()),
       applicationFeeCents: v.number(),
       published: v.boolean(),
+      isOwnOrgListing: v.boolean(),
     }),
     v.null(),
   ),
   handler: async (ctx, args) => {
     const listing = await ctx.db.get(args.listingId);
     if (!listing || !listing.published) return null;
+
+    let isOwnOrgListing = false;
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerkUserId", (q) =>
+          q.eq("clerkUserId", identity.subject),
+        )
+        .unique();
+      if (user) {
+        const membership = await ctx.db
+          .query("orgMembers")
+          .withIndex("by_org_and_user", (q) =>
+            q.eq("orgId", listing.orgId).eq("userId", user._id),
+          )
+          .unique();
+        isOwnOrgListing = Boolean(membership);
+      }
+    }
+
     return {
       _id: listing._id,
       title: listing.title,
@@ -111,6 +133,7 @@ export const getById = query({
       photoUrls: listing.photoUrls,
       applicationFeeCents: listing.applicationFeeCents,
       published: listing.published,
+      isOwnOrgListing,
     };
   },
 });

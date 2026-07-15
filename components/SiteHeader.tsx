@@ -1,14 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { Show, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
-import { useQuery } from "convex/react";
+import { Show, SignInButton, UserButton } from "@clerk/nextjs";
+import { useConvexAuth, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { landlordApi } from "@/lib/landlord/api";
 import { withOrgId } from "@/lib/landlord/paths";
 
+function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-neutral-900 px-1.5 py-0.5 text-[10px] font-medium text-white">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
 export function SiteHeader() {
-  const { isSignedIn } = useAuth();
-  const orgs = useQuery(landlordApi.orgs.listMine, isSignedIn ? {} : "skip");
+  const { isAuthenticated } = useConvexAuth();
+  const orgs = useQuery(
+    landlordApi.orgs.listMine,
+    isAuthenticated ? {} : "skip",
+  );
+  const unreadCount = useQuery(
+    api.notifications.unreadCount,
+    isAuthenticated ? {} : "skip",
+  );
   const hasOrgs = Boolean(orgs && orgs.length > 0);
 
   return (
@@ -21,6 +38,44 @@ export function SiteHeader() {
           <Link href="/listings" className="text-neutral-700 hover:text-neutral-900">
             Listings
           </Link>
+          <Show when="signed-in">
+            <Link
+              href="/applications"
+              className="text-neutral-700 hover:text-neutral-900"
+            >
+              My applications
+            </Link>
+          </Show>
+          <Show when="signed-in">
+            <Link
+              href="/notifications"
+              className="text-neutral-700 hover:text-neutral-900"
+            >
+              Notifications
+              <UnreadBadge count={unreadCount ?? 0} />
+            </Link>
+          </Show>
+          <Show when="signed-in">
+            <Link
+              href="/messages"
+              className="text-neutral-700 hover:text-neutral-900"
+            >
+              Messages
+            </Link>
+          </Show>
+          <Show when="signed-in">
+            <Link href="/rent" className="text-neutral-700 hover:text-neutral-900">
+              Rent
+            </Link>
+          </Show>
+          <Show when="signed-in">
+            <Link
+              href="/maintenance"
+              className="text-neutral-700 hover:text-neutral-900"
+            >
+              Maintenance
+            </Link>
+          </Show>
           <Show when="signed-in">
             {hasOrgs && orgs ? (
               <Link
