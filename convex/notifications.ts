@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireOrgMember, requireUser } from "./lib/auth";
 import { notificationType } from "./schema";
 
@@ -13,6 +13,56 @@ const notificationRecord = v.object({
   readAt: v.optional(v.number()),
   createdAt: v.number(),
   listingTitle: v.optional(v.string()),
+});
+
+export const isEmailEnabled = query({
+  args: {},
+  returns: v.object({ enabled: v.boolean() }),
+  handler: async () => {
+    return { enabled: process.env.EMAIL_ENABLED === "true" };
+  },
+});
+
+export const getForEmail = internalQuery({
+  args: { notificationId: v.id("notifications") },
+  returns: v.union(
+    v.object({
+      notificationId: v.id("notifications"),
+      title: v.string(),
+      body: v.string(),
+      orgId: v.optional(v.id("orgs")),
+      toEmail: v.string(),
+      emailSentAt: v.optional(v.number()),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const notification = await ctx.db.get(args.notificationId);
+    if (!notification) return null;
+    const user = await ctx.db.get(notification.userId);
+    if (!user) return null;
+    return {
+      notificationId: notification._id,
+      title: notification.title,
+      body: notification.body,
+      orgId: notification.orgId,
+      toEmail: user.email,
+      emailSentAt: notification.emailSentAt,
+    };
+  },
+});
+
+export const markEmailSent = internalMutation({
+  args: { notificationId: v.id("notifications") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const notification = await ctx.db.get(args.notificationId);
+    if (!notification) return null;
+    if (notification.emailSentAt === undefined) {
+      await ctx.db.patch(args.notificationId, { emailSentAt: Date.now() });
+    }
+    return null;
+  },
 });
 
 export const listMine = query({

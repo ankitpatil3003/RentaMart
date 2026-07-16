@@ -5,6 +5,7 @@ import { ConvexReactClient, useConvexAuth, useMutation } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { useEffect, type ReactNode } from "react";
 import { api } from "../convex/_generated/api";
+import { NotificationToasts } from "@/components/notifications/NotificationToasts";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 if (!convexUrl) {
@@ -30,7 +31,10 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-        <EnsureUser>{children}</EnsureUser>
+        <EnsureUser>
+          {children}
+          <NotificationToasts />
+        </EnsureUser>
       </ConvexProviderWithClerk>
     </ClerkProvider>
   );

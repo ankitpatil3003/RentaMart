@@ -1,4 +1,5 @@
 import type { Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import type { MutationCtx } from "../_generated/server";
 
 export type NotificationKind =
@@ -20,6 +21,15 @@ async function listingTitle(
   return listing?.title ?? "Listing";
 }
 
+async function scheduleEmail(
+  ctx: MutationCtx,
+  notificationId: Id<"notifications">,
+): Promise<void> {
+  await ctx.scheduler.runAfter(0, internal.emailActions.sendForNotification, {
+    notificationId,
+  });
+}
+
 export async function notifyRenter(
   ctx: MutationCtx,
   applicationId: Id<"applications">,
@@ -30,7 +40,7 @@ export async function notifyRenter(
   const application = await ctx.db.get(applicationId);
   if (!application) return;
 
-  await ctx.db.insert("notifications", {
+  const notificationId = await ctx.db.insert("notifications", {
     userId: application.renterUserId,
     applicationId,
     type,
@@ -38,6 +48,7 @@ export async function notifyRenter(
     body,
     createdAt: Date.now(),
   });
+  await scheduleEmail(ctx, notificationId);
 }
 
 export async function notifyOrgStaff(
@@ -54,7 +65,7 @@ export async function notifyOrgStaff(
     .collect();
 
   for (const member of members) {
-    await ctx.db.insert("notifications", {
+    const notificationId = await ctx.db.insert("notifications", {
       userId: member.userId,
       applicationId,
       orgId,
@@ -63,6 +74,7 @@ export async function notifyOrgStaff(
       body,
       createdAt: Date.now(),
     });
+    await scheduleEmail(ctx, notificationId);
   }
 }
 

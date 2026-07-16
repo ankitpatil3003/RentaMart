@@ -44,5 +44,5 @@
 
 ## Future (Layer 5.1)
 
-- Optional email via Resend/SendGrid (feature-flagged)
-- Real-time toast on notification insert (Convex subscription already reactive on list page)
+- [x] Optional email via Resend (feature-flagged) — see `2026-07-16-layer5-1-email-toasts.md`
+- [x] Real-time toast on notification insert
