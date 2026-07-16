@@ -1,0 +1,37 @@
+{
+  "name": "rentamart",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:web": "next dev",
+    "dev:convex": "convex dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "check": "npm run lint && npm run typecheck"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.5.17",
+    "convex": "^1.42.1",
+    "convex-helpers": "^0.1.120",
+    "next": "16.2.10",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "stripe": "^22.3.1"
+  },
+  "devDependencies": {
+    "@convex-dev/eslint-plugin": "^2.0.0",
+    "@playwright/test": "^1.61.1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.10",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
