@@ -2,9 +2,9 @@
 
 US-only hybrid rental marketplace: public renter search/apply plus landlord ops.
 
-**Layer 1:** list-first search, apply, platform application fee via Stripe test webhooks, status through under review, feature-flagged AI, demo seed, Playwright smoke tests.
+**Layers 1–5 (v1.0.0):** renter marketplace, landlord portal with Stripe Connect, tenant ops, competitive selection with refunds, in-app notifications (optional email + toasts).
 
-**Layer 2 (this branch):** landlord portal, Stripe Connect test onboarding, org RBAC, self-serve listings with publish gates, approve/deny, deposit + first month via Connect, stub screening + AI assist, extended E2E stubs.
+**Layer 6:** GitHub Actions CI and Vercel deploy docs for previews and production demos.
 
 ## Stack
 
@@ -100,7 +100,10 @@ Webhooks own paid state. UI never marks payments paid alone.
 | `npm run dev:web` | Next.js |
 | `npx convex dev` | Convex sync |
 | `npm run check` | lint + typecheck |
-| `npm run test:e2e` | Playwright |
+| `npm run typecheck` | TypeScript only |
+| `npm run build` | Production Next.js build |
+| `npm run test:e2e` | All Playwright tests |
+| `npm run test:e2e:smoke` | Public + auth-redirect smoke tests |
 
 ## E2E
 
@@ -118,6 +121,57 @@ Public smoke tests run without Stripe. Full paths:
 - Layer 4 smoke (`e2e/layer4-smoke.spec.ts`) landlord applications auth
 - Layer 5 smoke (`e2e/layer5-smoke.spec.ts`) notifications auth
 
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on pushes and PRs to `develop` and `main`:
+
+1. **Typecheck** — always
+2. **Next.js build** — always (placeholder Convex URL; Clerk secrets used when present)
+3. **Playwright smoke** — only when repository secrets are set:
+   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+   - `CLERK_SECRET_KEY`
+   - optional `NEXT_PUBLIC_CONVEX_URL`
+
+Add those under **Settings → Secrets and variables → Actions**.
+
+## Deploy (Vercel + Convex)
+
+### One-time Vercel setup
+
+1. Import `ankitpatil3003/RentaMart` in the [Vercel dashboard](https://vercel.com/new).
+2. Framework: Next.js (see `vercel.json`).
+3. Production branch: `main`. Preview deployments run on every PR.
+4. Set environment variables on Vercel (Production + Preview) from `.env.example`:
+   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
+   - `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL`
+   - `NEXT_PUBLIC_APP_URL` (your Vercel URL, e.g. `https://rentamart.vercel.app`)
+   - Stripe test keys as needed for demo payments
+5. Redeploy after env changes.
+
+### Convex production
+
+Use a separate Convex **production** deployment (not your local `npx convex dev` deployment):
+
+```bash
+npx convex deploy
+```
+
+Or, so Vercel always ships matching functions/schema, set `CONVEX_DEPLOY_KEY` on Vercel and change the Vercel build command to:
+
+```bash
+npx convex deploy --cmd 'npm run build'
+```
+
+Point Stripe webhooks at `https://YOUR_PROD_DEPLOYMENT.convex.site/stripe/webhook` and set `STRIPE_WEBHOOK_SECRET` / `STRIPE_SECRET_KEY` on that Convex deployment (`npx convex env set ...` with the production deploy selected).
+
+### Local vs production
+
+| Concern | Local | Production demo |
+| ------- | ----- | --------------- |
+| Convex | `npx convex dev` | `npx convex deploy` / deploy key |
+| Web | `npm run dev:web` | Vercel |
+| Stripe webhooks | Stripe CLI → Convex `.site` URL | Stripe Dashboard → Convex `.site` URL |
+
 ## Layers
 
 - Layer 1: renter search, apply, application fee
@@ -125,6 +179,7 @@ Public smoke tests run without Stripe. Full paths:
 - Layer 3: messaging, rent schedule, maintenance (tenant ops after move-in)
 - Layer 4: competitive selection, refunds, move-in confirmation
 - Layer 5: in-app notifications for application status changes
+- Layer 6: CI (GitHub Actions) + Vercel deploy docs
 
 ## Layer 5 notifications
 
