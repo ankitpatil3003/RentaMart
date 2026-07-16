@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  build:
+    name: Next.js build
+    runs-on: ubuntu-latest
+    needs: typecheck
+    env:
+      NEXT_PUBLIC_CONVEX_URL: https://placeholder.convex.cloud
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2ktYnVpbGQtcGxhY2Vob2xkZXIuY2xlcmsuYWNjb3VudHMuZGV2JA
+      CLERK_SECRET_KEY: sk_test_ci_build_placeholder_key_not_for_runtime_use
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  e2e-smoke:
+    name: Playwright smoke
+    runs-on: ubuntu-latest
+    needs: typecheck
+    env:
+      CI: true
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+      PLAYWRIGHT_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Detect Clerk secrets
+        id: clerk
+        env:
+          CLERK_PK: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SK: ${{ secrets.CLERK_SECRET_KEY }}
+        run: |
+          if [ -n "$CLERK_PK" ] && [ -n "$CLERK_SK" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Playwright smoke: set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY repository secrets."
+          fi
+      - name: Install Playwright Chromium
+        if: steps.clerk.outputs.ready == 'true'
+        run: npx playwright install chromium --with-deps
+      - name: Use placeholder Convex URL when unset
+        if: steps.clerk.outputs.ready == 'true'
+        run: |
+          if [ -z "$NEXT_PUBLIC_CONVEX_URL" ]; then
+            echo "NEXT_PUBLIC_CONVEX_URL=https://placeholder.convex.cloud" >> "$GITHUB_ENV"
+          fi
+      - name: Run smoke tests
+        if: steps.clerk.outputs.ready == 'true'
+        run: npm run test:e2e:smoke
+        timeout-minutes: 15
