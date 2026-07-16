@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
+import { api } from "@/convex/_generated/api";
 import { usePathname } from "next/navigation";
 import { withOrgId } from "@/lib/landlord/paths";
 
@@ -10,10 +12,15 @@ const links = [
   { href: "/landlord/connect", label: "Connect" },
   { href: "/landlord/listings", label: "Listings" },
   { href: "/landlord/applications", label: "Applications" },
+  { href: "/landlord/notifications", label: "Notifications" },
+  { href: "/landlord/messages", label: "Messages" },
+  { href: "/landlord/rent", label: "Rent" },
+  { href: "/landlord/maintenance", label: "Maintenance" },
 ] as const;
 
 export function LandlordNav({ orgId }: { orgId: Id<"orgs"> }) {
   const pathname = usePathname();
+  const unreadCount = useQuery(api.notifications.unreadCount, { orgId });
 
   return (
     <nav className="flex flex-wrap gap-4 border-b border-neutral-200 pb-4 text-sm">
@@ -22,6 +29,10 @@ export function LandlordNav({ orgId }: { orgId: Id<"orgs"> }) {
           "exact" in link && link.exact
             ? pathname === link.href
             : pathname === link.href || pathname.startsWith(`${link.href}/`);
+        const showBadge =
+          link.href === "/landlord/notifications" &&
+          unreadCount !== undefined &&
+          unreadCount > 0;
         return (
           <Link
             key={link.href}
@@ -33,6 +44,11 @@ export function LandlordNav({ orgId }: { orgId: Id<"orgs"> }) {
             }
           >
             {link.label}
+            {showBadge ? (
+              <span className="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-neutral-900 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            ) : null}
           </Link>
         );
       })}

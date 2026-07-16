@@ -22,6 +22,7 @@ type CheckoutPrepareResult = {
   paymentId: Id<"payments">;
   amountCents: number;
   idempotencyKey: string;
+  stripeCheckoutSessionId?: string;
 };
 
 async function prepareCheckout(
@@ -116,8 +117,14 @@ async function createCheckoutSession(
     ];
   }
 
+  // Include prior session id so retries after expiry create a new Checkout
+  // session instead of Stripe returning the same expired one for 24h.
+  const stripeIdempotencyKey = prepared.stripeCheckoutSessionId
+    ? `${prepared.idempotencyKey}:${prepared.stripeCheckoutSessionId}`
+    : `${prepared.idempotencyKey}:new`;
+
   const session = await stripe.checkout.sessions.create(sessionParams, {
-    idempotencyKey: prepared.idempotencyKey,
+    idempotencyKey: stripeIdempotencyKey,
   });
 
   if (!session.url) {
@@ -181,6 +188,78 @@ export const createFirstMonthCheckout = action({
       paymentType: "first_month",
       useConnect: true,
     });
+  },
+});
+
+export const createRentCheckout = action({
+  args: { rentChargeId: v.id("rentCharges") },
+  returns: v.object({ url: v.string() }),
+  handler: async (ctx, args): Promise<{ url: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const prepared = await ctx.runMutation(internal.payments.prepareRentCheckout, {
+      rentChargeId: args.rentChargeId,
+      clerkUserId: identity.subject,
+    });
+
+    const stripe = requireStripe();
+    const destination = await ctx.runQuery(
+      internal.payments.getConnectDestinationForApplication,
+      { applicationId: prepared.applicationId },
+    );
+    if (!destination) {
+      throw new Error("Landlord payouts are not configured for this listing");
+    }
+
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+      mode: "payment",
+      success_url: `${appUrl()}/rent?checkout=success`,
+      cancel_url: `${appUrl()}/rent?checkout=canceled`,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: prepared.amountCents,
+            product_data: {
+              name: `Monthly rent ${prepared.listingTitle}`,
+            },
+          },
+        },
+      ],
+      metadata: {
+        applicationId: prepared.applicationId,
+        paymentId: prepared.paymentId,
+        type: "rent",
+        idempotencyKey: prepared.idempotencyKey,
+      },
+      payment_intent_data: {
+        transfer_data: {
+          destination: destination.stripeConnectAccountId,
+        },
+      },
+    };
+
+    const stripeIdempotencyKey = prepared.stripeCheckoutSessionId
+      ? `${prepared.idempotencyKey}:${prepared.stripeCheckoutSessionId}`
+      : `${prepared.idempotencyKey}:new`;
+
+    const session = await stripe.checkout.sessions.create(sessionParams, {
+      idempotencyKey: stripeIdempotencyKey,
+    });
+
+    if (!session.url) {
+      throw new Error("Stripe did not return a checkout URL");
+    }
+
+    await ctx.runMutation(internal.payments.markCheckoutOpen, {
+      paymentId: prepared.paymentId,
+      stripeCheckoutSessionId: session.id,
+      rentChargeId: prepared.rentChargeId,
+    });
+
+    return { url: session.url };
   },
 });
 
@@ -260,5 +339,186 @@ export const verifyAndApplyWebhook = internalAction({
     }
 
     return { ok: true, deduped: false };
+  },
+});
+
+export const syncCheckoutStatus = action({
+  args: { applicationId: v.id("applications") },
+  returns: v.object({
+    synced: v.boolean(),
+    message: v.string(),
+    paymentStatus: v.optional(v.string()),
+    sessionStatus: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const openPayments = await ctx.runQuery(
+      internal.payments.listOpenCheckoutsForSync,
+      {
+        applicationId: args.applicationId,
+        clerkUserId: identity.subject,
+      },
+    );
+
+    if (openPayments.length === 0) {
+      return {
+        synced: false,
+        message: "No open checkout session found to sync.",
+      };
+    }
+
+    const stripe = requireStripe();
+    let lastMessage = "No update needed.";
+    let synced = false;
+    let paymentStatus: string | undefined;
+    let sessionStatus: string | undefined;
+
+    for (const payment of openPayments) {
+      const session = await stripe.checkout.sessions.retrieve(
+        payment.stripeCheckoutSessionId,
+      );
+      paymentStatus = session.payment_status;
+      sessionStatus = session.status ?? undefined;
+
+      if (session.payment_status === "paid") {
+        await ctx.runMutation(internal.payments.applyStripeCheckoutEvent, {
+          stripeEventId: `sync:${session.id}:paid`,
+          type: "checkout.session.completed",
+          sessionId: session.id,
+          paymentStatus: session.payment_status,
+          paymentIntentId:
+            typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : session.payment_intent?.id,
+          metadata: {
+            applicationId: args.applicationId,
+            paymentId: payment.paymentId,
+            idempotencyKey: payment.idempotencyKey,
+            type: payment.type,
+          },
+        });
+        synced = true;
+        lastMessage = "Payment confirmed. Application status updated.";
+        continue;
+      }
+
+      if (session.status === "expired") {
+        await ctx.runMutation(internal.payments.applyStripeCheckoutEvent, {
+          stripeEventId: `sync:${session.id}:expired`,
+          type: "checkout.session.expired",
+          sessionId: session.id,
+          paymentStatus: session.payment_status,
+          paymentIntentId:
+            typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : session.payment_intent?.id,
+          metadata: {
+            applicationId: args.applicationId,
+            paymentId: payment.paymentId,
+            idempotencyKey: payment.idempotencyKey,
+            type: payment.type,
+          },
+        });
+        synced = true;
+        lastMessage =
+          "Checkout session expired without payment. You can pay again.";
+        continue;
+      }
+
+      lastMessage =
+        "Checkout is still open or unpaid. Complete payment in Stripe, then refresh again.";
+    }
+
+    return {
+      synced,
+      message: lastMessage,
+      paymentStatus,
+      sessionStatus,
+    };
+  },
+});
+
+export const syncRentCheckoutStatus = action({
+  args: {},
+  returns: v.object({
+    synced: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const openPayments = await ctx.runQuery(
+      internal.payments.listOpenRentCheckoutsForSync,
+      { clerkUserId: identity.subject },
+    );
+
+    if (openPayments.length === 0) {
+      return {
+        synced: false,
+        message: "No open rent checkout session found to sync.",
+      };
+    }
+
+    const stripe = requireStripe();
+    let lastMessage = "No update needed.";
+    let synced = false;
+
+    for (const payment of openPayments) {
+      const session = await stripe.checkout.sessions.retrieve(
+        payment.stripeCheckoutSessionId,
+      );
+
+      if (session.payment_status === "paid") {
+        await ctx.runMutation(internal.payments.applyStripeCheckoutEvent, {
+          stripeEventId: `sync:${session.id}:paid`,
+          type: "checkout.session.completed",
+          sessionId: session.id,
+          paymentStatus: session.payment_status,
+          paymentIntentId:
+            typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : session.payment_intent?.id,
+          metadata: {
+            applicationId: payment.applicationId,
+            paymentId: payment.paymentId,
+            idempotencyKey: payment.idempotencyKey,
+            type: "rent",
+          },
+        });
+        synced = true;
+        lastMessage = "Rent payment confirmed.";
+        continue;
+      }
+
+      if (session.status === "expired") {
+        await ctx.runMutation(internal.payments.applyStripeCheckoutEvent, {
+          stripeEventId: `sync:${session.id}:expired`,
+          type: "checkout.session.expired",
+          sessionId: session.id,
+          paymentStatus: session.payment_status,
+          paymentIntentId:
+            typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : session.payment_intent?.id,
+          metadata: {
+            applicationId: payment.applicationId,
+            paymentId: payment.paymentId,
+            idempotencyKey: payment.idempotencyKey,
+            type: "rent",
+          },
+        });
+        synced = true;
+        lastMessage = "Rent checkout expired. You can pay again.";
+        continue;
+      }
+
+      lastMessage =
+        "Checkout is still open or unpaid. Complete payment in Stripe, then refresh again.";
+    }
+
+    return { synced, message: lastMessage };
   },
 });

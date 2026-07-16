@@ -36,6 +36,21 @@ export type LandlordListing = {
   applicationFeeCents: number;
 };
 
+export type OrgApplication = {
+  _id: Id<"applications">;
+  listingId: Id<"listings">;
+  listingTitle: string;
+  status: string;
+  fullName: string;
+  email: string;
+  submittedAt?: number;
+  payments: {
+    feePaid: boolean;
+    depositPaid: boolean;
+    firstMonthPaid: boolean;
+  };
+};
+
 export type InboxApplication = {
   _id: Id<"applications">;
   listingId: Id<"listings">;
@@ -55,6 +70,12 @@ export type ApplicationReview = {
   phone: string;
   message?: string;
   submittedAt?: number;
+  payments: {
+    feePaid: boolean;
+    depositPaid: boolean;
+    firstMonthPaid: boolean;
+  };
+  qualifiedCountOnListing: number;
   listing: {
     title: string;
     city: string;

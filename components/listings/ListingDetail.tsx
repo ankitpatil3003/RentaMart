@@ -65,20 +65,32 @@ export function ListingDetail({ listingId }: { listingId: Id<"listings"> }) {
 
         <section className="mt-12 border-t border-neutral-200 pt-8">
           <h2 className="text-2xl font-semibold tracking-tight">Apply</h2>
-          <Show when="signed-out">
-            <p className="mt-3 text-neutral-600">Sign in to apply for this home.</p>
-            <SignInButton mode="modal">
-              <button
-                type="button"
-                className="mt-4 rounded-md bg-neutral-900 px-5 py-3 text-white"
-              >
-                Sign in to apply
-              </button>
-            </SignInButton>
-          </Show>
-          <Show when="signed-in">
-            <ApplyForm listingId={listingId} />
-          </Show>
+          {listing.isOwnOrgListing ? (
+            <p className="mt-3 text-neutral-600">
+              This is your organization&apos;s listing. You can view it here,
+              but you cannot apply to your own property. You can still apply to
+              listings from other landlords.
+            </p>
+          ) : (
+            <>
+              <Show when="signed-out">
+                <p className="mt-3 text-neutral-600">
+                  Sign in to apply for this home.
+                </p>
+                <SignInButton mode="modal">
+                  <button
+                    type="button"
+                    className="mt-4 rounded-md bg-neutral-900 px-5 py-3 text-white"
+                  >
+                    Sign in to apply
+                  </button>
+                </SignInButton>
+              </Show>
+              <Show when="signed-in">
+                <ApplyForm listingId={listingId} />
+              </Show>
+            </>
+          )}
         </section>
 
         {ai?.enabled ? <ListingQa listingId={listingId} /> : null}

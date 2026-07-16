@@ -5,11 +5,16 @@ import {
   query,
   type MutationCtx,
 } from "./_generated/server";
-import { requireUser } from "./lib/auth";
+import { requireOrgMember, requireUser } from "./lib/auth";
+import {
+  notifyApplicationFeePaid,
+  notifyQualified,
+} from "./lib/notificationHelpers";
 import {
   appFeeIdempotencyKey,
   depositIdempotencyKey,
   firstMonthIdempotencyKey,
+  rentIdempotencyKey,
 } from "./lib/money";
 import { paymentStatus, paymentType } from "./schema";
 
@@ -26,7 +31,13 @@ export const getByApplication = query({
   args: { applicationId: v.id("applications") },
   returns: v.union(paymentRecord, v.null()),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
+      .unique();
+    if (!user) return null;
     const application = await ctx.db.get(args.applicationId);
     if (!application || application.renterUserId !== user._id) {
       return null;
@@ -54,7 +65,13 @@ export const listForApplication = query({
   args: { applicationId: v.id("applications") },
   returns: v.array(paymentRecord),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
+      .unique();
+    if (!user) return [];
     const application = await ctx.db.get(args.applicationId);
     if (!application || application.renterUserId !== user._id) {
       return [];
@@ -142,6 +159,7 @@ async function preparePaymentCheckout(
       paymentId: existing._id,
       amountCents: existing.amountCents,
       idempotencyKey: existing.idempotencyKey,
+      stripeCheckoutSessionId: existing.stripeCheckoutSessionId,
     };
   }
 
@@ -157,6 +175,7 @@ async function preparePaymentCheckout(
     paymentId,
     amountCents: args.amountCents,
     idempotencyKey: args.idempotencyKey,
+    stripeCheckoutSessionId: undefined,
   };
 }
 
@@ -166,6 +185,7 @@ export const prepareApplicationFeeCheckout = internalMutation({
     paymentId: v.id("payments"),
     amountCents: v.number(),
     idempotencyKey: v.string(),
+    stripeCheckoutSessionId: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
     const application = await ctx.db.get(args.applicationId);
@@ -192,6 +212,7 @@ export const prepareDepositCheckout = internalMutation({
     paymentId: v.id("payments"),
     amountCents: v.number(),
     idempotencyKey: v.string(),
+    stripeCheckoutSessionId: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
     const application = await ctx.db.get(args.applicationId);
@@ -218,6 +239,7 @@ export const prepareFirstMonthCheckout = internalMutation({
     paymentId: v.id("payments"),
     amountCents: v.number(),
     idempotencyKey: v.string(),
+    stripeCheckoutSessionId: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
     const application = await ctx.db.get(args.applicationId);
@@ -238,11 +260,123 @@ export const prepareFirstMonthCheckout = internalMutation({
   },
 });
 
+export const prepareRentCheckout = internalMutation({
+  args: {
+    rentChargeId: v.id("rentCharges"),
+    clerkUserId: v.string(),
+  },
+  returns: v.object({
+    paymentId: v.id("payments"),
+    applicationId: v.id("applications"),
+    amountCents: v.number(),
+    idempotencyKey: v.string(),
+    stripeCheckoutSessionId: v.optional(v.string()),
+    listingTitle: v.string(),
+    rentChargeId: v.id("rentCharges"),
+  }),
+  handler: async (ctx, args) => {
+    const charge = await ctx.db.get(args.rentChargeId);
+    if (!charge) {
+      throw new Error("Rent charge not found");
+    }
+    if (charge.status === "paid") {
+      throw new Error("Rent for this period is already paid");
+    }
+    if (charge.status !== "due" && charge.status !== "failed") {
+      // checkout_open may retry below via existing payment row
+      if (charge.status !== "checkout_open") {
+        throw new Error("Rent charge is not payable");
+      }
+    }
+
+    const lease = await ctx.db.get(charge.leaseId);
+    if (!lease || lease.status !== "active") {
+      throw new Error("Lease not found");
+    }
+
+    const renter = await ctx.db.get(lease.renterUserId);
+    if (!renter || renter.clerkUserId !== args.clerkUserId) {
+      throw new Error("Unauthorized");
+    }
+
+    const listing = await ctx.db.get(lease.listingId);
+    if (!listing) throw new Error("Listing not found");
+
+    // Move-in first_month payment already covers the lease start period.
+    const start = new Date(lease.startDate);
+    const startPeriodKey = `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}`;
+    if (charge.periodKey === startPeriodKey) {
+      const payments = await ctx.db
+        .query("payments")
+        .withIndex("by_application", (q) =>
+          q.eq("applicationId", lease.applicationId),
+        )
+        .collect();
+      const firstMonthPaid = payments.some(
+        (payment) =>
+          payment.type === "first_month" && payment.status === "succeeded",
+      );
+      if (firstMonthPaid) {
+        await ctx.db.patch(charge._id, { status: "paid" });
+        throw new Error(
+          "First month rent was already paid during move-in",
+        );
+      }
+    }
+
+    const idempotencyKey = rentIdempotencyKey(lease._id, charge.periodKey);
+    const existing = await ctx.db
+      .query("payments")
+      .withIndex("by_idempotencyKey", (q) =>
+        q.eq("idempotencyKey", idempotencyKey),
+      )
+      .unique();
+
+    if (existing?.status === "succeeded") {
+      await ctx.db.patch(charge._id, { status: "paid" });
+      throw new Error("Rent for this period is already paid");
+    }
+
+    if (existing) {
+      return {
+        paymentId: existing._id,
+        applicationId: lease.applicationId,
+        amountCents: existing.amountCents,
+        idempotencyKey: existing.idempotencyKey,
+        stripeCheckoutSessionId: existing.stripeCheckoutSessionId,
+        listingTitle: listing.title,
+        rentChargeId: charge._id,
+      };
+    }
+
+    const paymentId = await ctx.db.insert("payments", {
+      applicationId: lease.applicationId,
+      type: "rent",
+      status: "created",
+      amountCents: charge.amountCents,
+      currency: "usd",
+      idempotencyKey,
+      rentChargeId: charge._id,
+    });
+
+    return {
+      paymentId,
+      applicationId: lease.applicationId,
+      amountCents: charge.amountCents,
+      idempotencyKey,
+      stripeCheckoutSessionId: undefined,
+      listingTitle: listing.title,
+      rentChargeId: charge._id,
+    };
+  },
+});
+
 export const markCheckoutOpen = internalMutation({
   args: {
     paymentId: v.id("payments"),
-    applicationId: v.id("applications"),
+    applicationId: v.optional(v.id("applications")),
     stripeCheckoutSessionId: v.string(),
+    rentChargeId: v.optional(v.id("rentCharges")),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -253,6 +387,13 @@ export const markCheckoutOpen = internalMutation({
       status: "checkout_open",
       stripeCheckoutSessionId: args.stripeCheckoutSessionId,
     });
+
+    if (args.rentChargeId) {
+      await ctx.db.patch(args.rentChargeId, { status: "checkout_open" });
+      return null;
+    }
+
+    if (!args.applicationId) return null;
 
     const application = await ctx.db.get(args.applicationId);
     if (!application) return null;
@@ -291,6 +432,110 @@ export const getStripeEvent = internalQuery({
   },
 });
 
+export const listOpenCheckoutsForSync = internalQuery({
+  args: {
+    applicationId: v.id("applications"),
+    clerkUserId: v.string(),
+  },
+  returns: v.array(
+    v.object({
+      paymentId: v.id("payments"),
+      type: paymentType,
+      status: paymentStatus,
+      stripeCheckoutSessionId: v.string(),
+      idempotencyKey: v.string(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const application = await ctx.db.get(args.applicationId);
+    if (!application) return [];
+    const user = await ctx.db.get(application.renterUserId);
+    if (!user || user.clerkUserId !== args.clerkUserId) return [];
+
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_application", (q) =>
+        q.eq("applicationId", args.applicationId),
+      )
+      .collect();
+
+    return payments
+      .filter(
+        (payment) =>
+          payment.stripeCheckoutSessionId &&
+          (payment.status === "checkout_open" ||
+            payment.status === "created" ||
+            payment.status === "failed"),
+      )
+      .map((payment) => ({
+        paymentId: payment._id,
+        type: payment.type,
+        status: payment.status,
+        stripeCheckoutSessionId: payment.stripeCheckoutSessionId!,
+        idempotencyKey: payment.idempotencyKey,
+      }));
+  },
+});
+
+export const listOpenRentCheckoutsForSync = internalQuery({
+  args: { clerkUserId: v.string() },
+  returns: v.array(
+    v.object({
+      paymentId: v.id("payments"),
+      rentChargeId: v.id("rentCharges"),
+      applicationId: v.id("applications"),
+      stripeCheckoutSessionId: v.string(),
+      idempotencyKey: v.string(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", args.clerkUserId))
+      .unique();
+    if (!user) return [];
+
+    const leases = await ctx.db
+      .query("leases")
+      .withIndex("by_renter", (q) => q.eq("renterUserId", user._id))
+      .collect();
+
+    const open = [];
+    for (const lease of leases) {
+      const payments = await ctx.db
+        .query("payments")
+        .withIndex("by_application", (q) =>
+          q.eq("applicationId", lease.applicationId),
+        )
+        .collect();
+
+      for (const payment of payments) {
+        if (
+          payment.type !== "rent" ||
+          !payment.rentChargeId ||
+          !payment.stripeCheckoutSessionId
+        ) {
+          continue;
+        }
+        if (
+          payment.status === "checkout_open" ||
+          payment.status === "created" ||
+          payment.status === "failed"
+        ) {
+          open.push({
+            paymentId: payment._id,
+            rentChargeId: payment.rentChargeId,
+            applicationId: lease.applicationId,
+            stripeCheckoutSessionId: payment.stripeCheckoutSessionId,
+            idempotencyKey: payment.idempotencyKey,
+          });
+        }
+      }
+    }
+    return open;
+  },
+});
+
 export const recordStripeEvent = internalMutation({
   args: { stripeEventId: v.string(), type: v.string() },
   returns: v.null(),
@@ -312,19 +557,108 @@ export const recordStripeEvent = internalMutation({
 });
 
 function nextApplicationStatusOnPaymentSuccess(
-  paymentType: "application_fee" | "deposit" | "first_month",
-): "under_review" | "first_month_due" | "move_in_ready" | null {
+  paymentType: "application_fee" | "deposit" | "first_month" | "rent",
+): "under_review" | "first_month_due" | "qualified" | null {
   switch (paymentType) {
     case "application_fee":
       return "under_review";
     case "deposit":
       return "first_month_due";
     case "first_month":
-      return "move_in_ready";
+      return "qualified";
+    case "rent":
+      return null;
     default:
       return null;
   }
 }
+
+export const listForApplicationOrg = query({
+  args: {
+    orgId: v.id("orgs"),
+    applicationId: v.id("applications"),
+  },
+  returns: v.array(paymentRecord),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    try {
+      await requireOrgMember(ctx, user, args.orgId);
+    } catch {
+      return [];
+    }
+    const application = await ctx.db.get(args.applicationId);
+    if (!application) return [];
+    const listing = await ctx.db.get(application.listingId);
+    if (!listing || listing.orgId !== args.orgId) return [];
+
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_application", (q) =>
+        q.eq("applicationId", args.applicationId),
+      )
+      .collect();
+    return payments.map((payment) => ({
+      _id: payment._id,
+      type: payment.type,
+      status: payment.status,
+      amountCents: payment.amountCents,
+      idempotencyKey: payment.idempotencyKey,
+      stripeCheckoutSessionId: payment.stripeCheckoutSessionId,
+    }));
+  },
+});
+
+export const getRefundablePayments = internalQuery({
+  args: { applicationId: v.id("applications") },
+  returns: v.array(
+    v.object({
+      paymentId: v.id("payments"),
+      type: v.union(v.literal("deposit"), v.literal("first_month")),
+      amountCents: v.number(),
+      stripePaymentIntentId: v.string(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_application", (q) =>
+        q.eq("applicationId", args.applicationId),
+      )
+      .collect();
+
+    const refundable = [];
+    for (const payment of payments) {
+      if (
+        (payment.type === "deposit" || payment.type === "first_month") &&
+        payment.status === "succeeded" &&
+        payment.stripePaymentIntentId
+      ) {
+        const existingRefund = await ctx.db
+          .query("refunds")
+          .withIndex("by_payment", (q) => q.eq("paymentId", payment._id))
+          .first();
+        if (existingRefund?.status === "succeeded") continue;
+
+        refundable.push({
+          paymentId: payment._id,
+          type: payment.type,
+          amountCents: payment.amountCents,
+          stripePaymentIntentId: payment.stripePaymentIntentId,
+        });
+      }
+    }
+    return refundable;
+  },
+});
+
+export const markPaymentRefunded = internalMutation({
+  args: { paymentId: v.id("payments") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.paymentId, { status: "refunded" });
+    return null;
+  },
+});
 
 export const applyStripeCheckoutEvent = internalMutation({
   args: {
@@ -405,9 +739,18 @@ export const applyStripeCheckoutEvent = internalMutation({
         stripePaymentIntentId: args.paymentIntentId,
         stripeCheckoutSessionId: args.sessionId,
       });
-      const nextStatus = nextApplicationStatusOnPaymentSuccess(payment.type);
-      if (nextStatus) {
-        await ctx.db.patch(payment.applicationId, { status: nextStatus });
+      if (payment.type === "rent" && payment.rentChargeId) {
+        await ctx.db.patch(payment.rentChargeId, { status: "paid" });
+      } else {
+        const nextStatus = nextApplicationStatusOnPaymentSuccess(payment.type);
+        if (nextStatus) {
+          await ctx.db.patch(payment.applicationId, { status: nextStatus });
+          if (nextStatus === "under_review") {
+            await notifyApplicationFeePaid(ctx, payment.applicationId);
+          } else if (nextStatus === "qualified") {
+            await notifyQualified(ctx, payment.applicationId);
+          }
+        }
       }
     } else if (failed) {
       await ctx.db.patch(payment._id, {
@@ -415,6 +758,12 @@ export const applyStripeCheckoutEvent = internalMutation({
         stripeEventId: args.stripeEventId,
         stripeCheckoutSessionId: args.sessionId,
       });
+      if (payment.type === "rent" && payment.rentChargeId) {
+        const charge = await ctx.db.get(payment.rentChargeId);
+        if (charge && charge.status !== "paid") {
+          await ctx.db.patch(payment.rentChargeId, { status: "failed" });
+        }
+      }
       const application = await ctx.db.get(payment.applicationId);
       if (
         payment.type === "application_fee" &&

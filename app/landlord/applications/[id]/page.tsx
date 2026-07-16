@@ -24,7 +24,8 @@ export default function LandlordApplicationDetailPage({
         Application review
       </h2>
       <p className="mt-2 text-neutral-600">
-        Screening assist is optional. Approve and deny are yours alone.
+        Review applicants, select the best qualified tenant, process refunds for
+        non-selected applicants, and confirm move-in.
       </p>
       <ApplicationReview
         orgId={orgId}
