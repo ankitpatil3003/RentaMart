@@ -265,6 +265,7 @@ export default defineSchema({
     body: v.string(),
     readAt: v.optional(v.number()),
     createdAt: v.number(),
+    emailSentAt: v.optional(v.number()),
   })
     .index("by_user", ["userId"])
     .index("by_user_and_read", ["userId", "readAt"])

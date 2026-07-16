@@ -135,6 +135,19 @@ In-app notifications for renters and landlords when application status changes:
 
 Routes: `/notifications` (renter), `/landlord/notifications?orgId=...` (landlord). Unread badges appear in the site header and landlord nav.
 
+### Layer 5.1 email + toasts
+
+- **Live toasts:** Signed-in users see a dismissible toast when a new unread notification arrives (no page refresh needed).
+- **Optional email (off by default):** Set on the Convex deployment:
+
+```bash
+npx convex env set EMAIL_ENABLED true
+npx convex env set RESEND_API_KEY re_...
+# optional: npx convex env set EMAIL_FROM "RentaMart <you@yourdomain.com>"
+```
+
+Emails use Resend. Without `EMAIL_ENABLED=true` and a valid key, notifications stay in-app only. Application fee remains non-refundable regardless of channel.
+
 ## Layer 4 competitive selection
 
 Multiple applicants can pay deposit and first month on the same listing. The landlord chooses the most qualified tenant (US norm: not first-come-first-served).
