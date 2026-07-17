@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-17
+
 ### Added
 
 - Trusted-org listing fast-path: Connect-ready orgs with enough prior approved listings (default 3) and no denials auto-approve authenticity on submit
 - Landlord dashboard shows listing-review trust status; editor copy distinguishes auto-approve vs standard review
 - Convex env `TRUSTED_ORG_MIN_APPROVED_LISTINGS` (optional; default 3)
+
+### Upgrade notes
+
+1. No required production env change (default threshold is 3)
+2. Optional: `npx convex env set TRUSTED_ORG_MIN_APPROVED_LISTINGS N` if you want a different threshold
 
 ## [1.5.0] - 2026-07-17
 
@@ -128,7 +135,8 @@ First production-ready milestone for RentaMart (Next.js, Convex, Clerk, Stripe t
 - Screening is stub/sandbox only
 - Email requires `EMAIL_ENABLED=true` and `RESEND_API_KEY`
 
-[Unreleased]: https://github.com/ankitpatil3003/RentaMart/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/ankitpatil3003/RentaMart/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/ankitpatil3003/RentaMart/releases/tag/v1.6.0
 [1.5.0]: https://github.com/ankitpatil3003/RentaMart/releases/tag/v1.5.0
 [1.4.0]: https://github.com/ankitpatil3003/RentaMart/releases/tag/v1.4.0
 [1.3.0]: https://github.com/ankitpatil3003/RentaMart/releases/tag/v1.3.0
