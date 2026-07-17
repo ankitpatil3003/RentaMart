@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
-import { FormEvent, useState, useTransition } from "react";
+import { FormEvent, useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -19,11 +20,19 @@ export function MessageThread({
 }: {
   applicationId: Id<"applications">;
 }) {
+  const router = useRouter();
   const thread = useQuery(api.messages.listMessages, { applicationId });
   const send = useMutation(api.messages.send);
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!thread) return;
+    if (thread.access === "forbidden" || thread.access === "not_found") {
+      router.replace("/messages");
+    }
+  }, [thread, router]);
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -49,6 +58,8 @@ export function MessageThread({
 
         {thread === undefined ? (
           <p className="mt-8 text-neutral-600">Loading…</p>
+        ) : thread.access !== "ok" ? (
+          <p className="mt-8 text-neutral-600">Redirecting…</p>
         ) : (
           <>
             <div className="mt-8 flex-1 space-y-4 rounded-md border border-neutral-200 bg-white p-5">

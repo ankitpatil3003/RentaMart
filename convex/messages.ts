@@ -171,22 +171,38 @@ export const listThreadsForOrg = query({
 export const listMessages = query({
   args: { applicationId: v.id("applications") },
   returns: v.object({
+    access: v.union(
+      v.literal("ok"),
+      v.literal("forbidden"),
+      v.literal("not_found"),
+    ),
     threadId: v.optional(v.id("messageThreads")),
     messages: v.array(messageRecord),
   }),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return { messages: [] };
+    if (!identity) {
+      return { access: "forbidden" as const, messages: [] };
+    }
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", identity.subject))
       .unique();
-    if (!user) return { messages: [] };
+    if (!user) {
+      return { access: "forbidden" as const, messages: [] };
+    }
 
-    const { application, listing } = await requireMessagingApplication(
-      ctx,
-      args.applicationId,
-    );
+    const application = await ctx.db.get(args.applicationId);
+    if (!application) {
+      return { access: "not_found" as const, messages: [] };
+    }
+    if (!MESSAGING_STATUSES.has(application.status)) {
+      return { access: "forbidden" as const, messages: [] };
+    }
+    const listing = await ctx.db.get(application.listingId);
+    if (!listing) {
+      return { access: "not_found" as const, messages: [] };
+    }
 
     const isRenter = application.renterUserId === user._id;
     const isOrgMember = !isRenter
@@ -201,7 +217,7 @@ export const listMessages = query({
       : false;
 
     if (!isRenter && !isOrgMember) {
-      return { messages: [] };
+      return { access: "forbidden" as const, messages: [] };
     }
 
     const thread = await ctx.db
@@ -212,7 +228,7 @@ export const listMessages = query({
       .unique();
 
     if (!thread) {
-      return { messages: [] };
+      return { access: "ok" as const, messages: [] };
     }
 
     const rows = await ctx.db
@@ -234,7 +250,7 @@ export const listMessages = query({
       });
     }
 
-    return { threadId: thread._id, messages };
+    return { access: "ok" as const, threadId: thread._id, messages };
   },
 });
 

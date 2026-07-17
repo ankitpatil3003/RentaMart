@@ -2,7 +2,7 @@
 
 import { useAction, useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -19,6 +19,7 @@ export function ApplicationStatusView({
   applicationId: Id<"applications">;
 }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const checkoutParam = searchParams.get("checkout");
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const me = useQuery(api.users.me, isAuthenticated ? {} : "skip");
@@ -74,6 +75,12 @@ export function ApplicationStatusView({
     });
   }, [applicationId, checkoutParam, profileReady, syncCheckoutStatus]);
 
+  useEffect(() => {
+    if (application === null) {
+      router.replace("/applications");
+    }
+  }, [application, router]);
+
   if (authLoading || (isAuthenticated && me === undefined) || application === undefined) {
     return (
       <main className="min-h-screen">
@@ -98,11 +105,7 @@ export function ApplicationStatusView({
     return (
       <main className="min-h-screen">
         <SiteHeader />
-        <p className="px-6 py-12 text-neutral-600">
-          Application not found. If you created this as a landlord, open it from
-          the landlord Applications inbox instead, or sign in as the renter who
-          applied.
-        </p>
+        <p className="px-6 py-12 text-neutral-600">Redirecting…</p>
       </main>
     );
   }

@@ -12,6 +12,7 @@ export default function LandlordDashboardPage() {
   const searchParams = useSearchParams();
   const orgId = searchParams.get("orgId") as Id<"orgs"> | null;
   const org = useQuery(landlordApi.orgs.get, orgId ? { orgId } : "skip");
+  const orgs = useQuery(landlordApi.orgs.listMine);
   const listings = useQuery(
     landlordApi.listings.listForOrg,
     orgId ? { orgId } : "skip",
@@ -28,6 +29,9 @@ export default function LandlordDashboardPage() {
     landlordApi.notifications.unreadCount,
     orgId ? { orgId } : "skip",
   );
+  const isOrgOwner =
+    orgId != null &&
+    orgs?.find((row) => row._id === orgId)?.role === "org_owner";
 
   if (!orgId) {
     return <p className="text-neutral-600">Select an organization.</p>;
@@ -35,6 +39,7 @@ export default function LandlordDashboardPage() {
 
   if (
     org === undefined ||
+    orgs === undefined ||
     listings === undefined ||
     inbox === undefined ||
     appStats === undefined ||
@@ -58,6 +63,7 @@ export default function LandlordDashboardPage() {
       <p className="mt-2 text-neutral-600">{org.name}</p>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
+        {isOrgOwner ? (
         <div className="border border-neutral-200 bg-white/70 p-5">
           <p className="text-sm text-neutral-500">Connect</p>
           <p className="mt-2 text-lg text-neutral-900">
@@ -70,6 +76,7 @@ export default function LandlordDashboardPage() {
             Manage Connect
           </Link>
         </div>
+        ) : null}
         <div className="border border-neutral-200 bg-white/70 p-5">
           <p className="text-sm text-neutral-500">Listings</p>
           <p className="mt-2 text-lg text-neutral-900">
@@ -127,7 +134,7 @@ export default function LandlordDashboardPage() {
             >
               New listing draft
             </Link>
-            {!org.connectReady ? (
+            {!org.connectReady && isOrgOwner ? (
               <Link
                 href={withOrgId("/landlord/connect", orgId)}
                 className="text-neutral-700 underline"

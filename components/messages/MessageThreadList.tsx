@@ -58,27 +58,38 @@ export function MessageThreadList() {
               <h2 className="text-lg font-medium text-neutral-900">
                 Start a conversation
               </h2>
-              {applications.length === 0 ? (
-                <p className="mt-2 text-neutral-600">
-                  Apply to a listing first to message a landlord.
-                </p>
-              ) : (
-                <ul className="mt-4 divide-y divide-neutral-200 rounded-md border border-neutral-200 bg-white">
-                  {applications.map((application) => (
-                    <li key={application._id} className="px-5 py-4">
-                      <Link
-                        href={`/messages/${application._id}`}
-                        className="text-neutral-900 hover:underline"
-                      >
-                        {application.listingTitle}
-                      </Link>
-                      <p className="mt-1 text-sm text-neutral-600">
-                        {statusLabel(application.status)}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {(() => {
+                const messageable = applications.filter(
+                  (application) =>
+                    application.status !== "draft" &&
+                    application.status !== "canceled",
+                );
+                if (messageable.length === 0) {
+                  return (
+                    <p className="mt-2 text-neutral-600">
+                      Apply to a listing and submit your application first to
+                      message a landlord.
+                    </p>
+                  );
+                }
+                return (
+                  <ul className="mt-4 divide-y divide-neutral-200 rounded-md border border-neutral-200 bg-white">
+                    {messageable.map((application) => (
+                      <li key={application._id} className="px-5 py-4">
+                        <Link
+                          href={`/messages/${application._id}`}
+                          className="text-neutral-900 hover:underline"
+                        >
+                          {application.listingTitle}
+                        </Link>
+                        <p className="mt-1 text-sm text-neutral-600">
+                          {statusLabel(application.status)}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
             </section>
           </>
         )}
