@@ -22,11 +22,13 @@ export function SiteHeader() {
     landlordApi.orgs.listMine,
     isAuthenticated ? {} : "skip",
   );
+  const me = useQuery(api.users.me, isAuthenticated ? {} : "skip");
   const unreadCount = useQuery(
     api.notifications.unreadCount,
     isAuthenticated ? {} : "skip",
   );
   const hasOrgs = Boolean(orgs && orgs.length > 0);
+  const isPlatformAdmin = Boolean(me?.roles.includes("platform_admin"));
 
   return (
     <header className="border-b border-neutral-200 bg-white/80 backdrop-blur">
@@ -83,6 +85,23 @@ export function SiteHeader() {
                 className="text-neutral-700 hover:text-neutral-900"
               >
                 Landlord
+              </Link>
+            ) : (
+              <Link
+                href="/become-landlord"
+                className="text-neutral-700 hover:text-neutral-900"
+              >
+                Become a landlord
+              </Link>
+            )}
+          </Show>
+          <Show when="signed-in">
+            {isPlatformAdmin ? (
+              <Link
+                href="/admin"
+                className="text-neutral-700 hover:text-neutral-900"
+              >
+                Admin
               </Link>
             ) : null}
           </Show>

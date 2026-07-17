@@ -13,6 +13,7 @@ import type * as aiActions from "../aiActions.js";
 import type * as applications from "../applications.js";
 import type * as emailActions from "../emailActions.js";
 import type * as http from "../http.js";
+import type * as landlordRequests from "../landlordRequests.js";
 import type * as leases from "../leases.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_customFunctions from "../lib/customFunctions.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   applications: typeof applications;
   emailActions: typeof emailActions;
   http: typeof http;
+  landlordRequests: typeof landlordRequests;
   leases: typeof leases;
   "lib/auth": typeof lib_auth;
   "lib/customFunctions": typeof lib_customFunctions;

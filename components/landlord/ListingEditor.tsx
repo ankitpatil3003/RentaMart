@@ -85,18 +85,25 @@ function ListingEditorForm({
   initialForm,
   published,
   connectReady,
+  verificationStatus,
+  verificationNote,
 }: {
   orgId: Id<"orgs">;
   listingId?: Id<"listings">;
   initialForm: FormState;
   published: boolean;
   connectReady: boolean;
+  verificationStatus: "draft" | "pending_review" | "approved" | "denied";
+  verificationNote?: string;
 }) {
   const router = useRouter();
   const createDraft = useMutation(landlordApi.listings.createDraft);
   const update = useMutation(landlordApi.listings.update);
   const publish = useMutation(landlordApi.listings.publish);
   const unpublish = useMutation(landlordApi.listings.unpublish);
+  const submitForVerification = useMutation(
+    landlordApi.listings.submitForVerification,
+  );
   const [form, setForm] = useState<FormState>(initialForm);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -151,8 +158,25 @@ function ListingEditorForm({
     });
   }
 
+  const statusLabel =
+    verificationStatus === "pending_review"
+      ? "Pending platform authenticity review"
+      : verificationStatus === "approved"
+        ? "Approved for publish"
+        : verificationStatus === "denied"
+          ? "Denied by platform review"
+          : "Draft";
+
   return (
     <form onSubmit={onSubmit} className="mt-8 grid max-w-lg gap-4">
+      {listingId ? (
+        <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
+          Verification: {statusLabel}
+          {verificationNote ? (
+            <span className="mt-1 block text-neutral-600">{verificationNote}</span>
+          ) : null}
+        </div>
+      ) : null}
       <label className="block text-sm text-neutral-600">
         Title
         <input
@@ -271,18 +295,59 @@ function ListingEditorForm({
       {listingId ? (
         <div className="border-t border-neutral-200 pt-6">
           <p className="text-sm text-neutral-600">
-            {published ? "This listing is published." : "This listing is a draft."}
+            {published
+              ? "This listing is published."
+              : "This listing is not published."}
           </p>
           {!connectReady && !published ? (
             <p className="mt-2 text-sm text-amber-800">
               Complete Stripe Connect onboarding before publishing.
             </p>
           ) : null}
+          {verificationStatus !== "approved" && !published ? (
+            <p className="mt-2 text-sm text-amber-800">
+              Submit for authenticity review. Publish is enabled only after
+              platform approval and Connect readiness.
+            </p>
+          ) : null}
           <div className="mt-4 flex flex-wrap gap-3">
+            {verificationStatus === "draft" ||
+            verificationStatus === "denied" ? (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => {
+                  setError(null);
+                  startTransition(async () => {
+                    try {
+                      await submitForVerification({ orgId, listingId });
+                    } catch (err) {
+                      setError(
+                        err instanceof Error
+                          ? err.message
+                          : "Could not submit for review",
+                      );
+                    }
+                  });
+                }}
+                className="border border-neutral-900 px-5 py-3 text-neutral-900 disabled:opacity-50"
+              >
+                Submit for review
+              </button>
+            ) : null}
+            {verificationStatus === "pending_review" ? (
+              <p className="text-sm text-neutral-600">
+                Waiting for platform authenticity review…
+              </p>
+            ) : null}
             {!published ? (
               <button
                 type="button"
-                disabled={isPending || !connectReady}
+                disabled={
+                  isPending ||
+                  !connectReady ||
+                  verificationStatus !== "approved"
+                }
                 onClick={() => {
                   setError(null);
                   startTransition(async () => {
@@ -348,6 +413,7 @@ export function ListingEditor({ orgId, listingId }: ListingEditorProps) {
 
   const connectReady = org?.connectReady === true;
   const published = existing?.published === true;
+  const verificationStatus = existing?.verificationStatus ?? "draft";
   const initialForm = existing ? formFromListing(existing) : emptyForm;
 
   return (
@@ -358,6 +424,9 @@ export function ListingEditor({ orgId, listingId }: ListingEditorProps) {
       initialForm={initialForm}
       published={published}
       connectReady={connectReady}
+      verificationStatus={verificationStatus}
+      verificationNote={existing?.verificationNote}
     />
   );
 }
+

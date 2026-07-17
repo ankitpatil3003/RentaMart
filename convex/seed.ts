@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
-import { requireUser, userHasRole } from "./lib/auth";
+import { internalMutation, mutation } from "./_generated/server";
+import { requirePlatformAdmin, userHasRole } from "./lib/auth";
 import { defaultApplicationFeeCents } from "./lib/money";
 
 const DEMO_ORG = "Demo Homes LLC";
@@ -57,11 +57,7 @@ export const demo = mutation({
     listingIds: v.array(v.id("listings")),
   }),
   handler: async (ctx) => {
-    const user = await requireUser(ctx);
-    const allowUnauthSeed = process.env.SEED_ALLOW_UNAUTH === "true";
-    if (!userHasRole(user, "platform_admin") && !allowUnauthSeed) {
-      throw new Error("platform_admin role required to seed demo data");
-    }
+    await requirePlatformAdmin(ctx);
 
     let org = await ctx.db
       .query("orgs")
@@ -119,6 +115,11 @@ export const demo = mutation({
             firstMonthCents: existing.rentCents,
           });
         }
+        if (existing.verificationStatus === undefined) {
+          await ctx.db.patch(existing._id, {
+            verificationStatus: existing.published ? "approved" : "draft",
+          });
+        }
         listingIds.push(existing._id);
         continue;
       }
@@ -137,6 +138,7 @@ export const demo = mutation({
         photoUrls: [...listing.photoUrls],
         published: true,
         applicationFeeCents: fee,
+        verificationStatus: "approved",
       });
       listingIds.push(id);
     }
@@ -145,14 +147,24 @@ export const demo = mutation({
   },
 });
 
-export const promoteSelfToPlatformAdmin = mutation({
-  args: {},
+/**
+ * Local bootstrap only. From Convex dashboard run:
+ * `internal.seed.promoteUserToPlatformAdmin` with `{ clerkUserId: "user_..." }`
+ * or patch `users.roles` directly. Never expose as a public mutation.
+ */
+export const promoteUserToPlatformAdmin = internalMutation({
+  args: { clerkUserId: v.string() },
   returns: v.null(),
-  handler: async (ctx) => {
-    if (process.env.SEED_ALLOW_UNAUTH !== "true") {
-      throw new Error("SEED_ALLOW_UNAUTH must be true for local bootstrap");
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (q) =>
+        q.eq("clerkUserId", args.clerkUserId),
+      )
+      .unique();
+    if (!user) {
+      throw new Error("User not found");
     }
-    const user = await requireUser(ctx);
     if (!userHasRole(user, "platform_admin")) {
       await ctx.db.patch(user._id, {
         roles: [...user.roles, "platform_admin"],

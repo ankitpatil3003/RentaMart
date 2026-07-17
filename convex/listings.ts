@@ -5,9 +5,24 @@ import { mutation, query } from "./_generated/server";
 import {
   requireOrgMember,
   requireOrgRole,
+  requirePlatformAdmin,
   requireUser,
 } from "./lib/auth";
 import { defaultApplicationFeeCents } from "./lib/money";
+import { listingVerificationStatus } from "./schema";
+
+type VerificationStatus =
+  | "draft"
+  | "pending_review"
+  | "approved"
+  | "denied";
+
+function effectiveVerificationStatus(
+  listing: Doc<"listings">,
+): VerificationStatus {
+  if (listing.verificationStatus) return listing.verificationStatus;
+  return listing.published ? "approved" : "draft";
+}
 
 const listingPublic = v.object({
   _id: v.id("listings"),
@@ -154,6 +169,8 @@ const landlordListing = v.object({
   photoUrls: v.array(v.string()),
   published: v.boolean(),
   applicationFeeCents: v.number(),
+  verificationStatus: listingVerificationStatus,
+  verificationNote: v.optional(v.string()),
 });
 
 const listingFields = {
@@ -188,6 +205,8 @@ function toLandlordListing(listing: Doc<"listings">) {
     photoUrls: listing.photoUrls,
     published: listing.published,
     applicationFeeCents: listing.applicationFeeCents,
+    verificationStatus: effectiveVerificationStatus(listing),
+    verificationNote: listing.verificationNote,
   };
 }
 
@@ -201,6 +220,21 @@ async function requireListingInOrg(
     throw new Error("Listing not found");
   }
   return listing;
+}
+
+function assertListingFieldsComplete(listing: Doc<"listings">) {
+  if (
+    !listing.title.trim() ||
+    !listing.city.trim() ||
+    !listing.state.trim() ||
+    !listing.zip.trim() ||
+    listing.rentCents <= 0 ||
+    listing.photoUrls.length < 1
+  ) {
+    throw new Error(
+      "Listing needs title, rent, city, state, zip, and at least one photo",
+    );
+  }
 }
 
 export const listForOrg = query({
@@ -262,6 +296,7 @@ export const createDraft = mutation({
       published: false,
       applicationFeeCents:
         args.applicationFeeCents ?? defaultApplicationFeeCents(),
+      verificationStatus: "draft",
     });
   },
 });
@@ -276,10 +311,22 @@ export const update = mutation({
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     await requireOrgMember(ctx, user, args.orgId);
-    await requireListingInOrg(ctx, args.orgId, args.listingId);
+    const listing = await requireListingInOrg(
+      ctx,
+      args.orgId,
+      args.listingId,
+    );
 
     const depositCents = args.depositCents ?? args.rentCents;
     const firstMonthCents = args.firstMonthCents ?? args.rentCents;
+    const status = effectiveVerificationStatus(listing);
+
+    // Material edits while pending/denied/approved (unpublished) reset to draft.
+    const resetVerification =
+      !listing.published &&
+      (status === "pending_review" ||
+        status === "denied" ||
+        status === "approved");
 
     await ctx.db.patch(args.listingId, {
       title: args.title.trim(),
@@ -295,6 +342,126 @@ export const update = mutation({
       photoUrls: args.photoUrls,
       applicationFeeCents:
         args.applicationFeeCents ?? defaultApplicationFeeCents(),
+      ...(resetVerification
+        ? { verificationStatus: "draft" as const, verificationNote: undefined }
+        : {}),
+    });
+    return null;
+  },
+});
+
+export const submitForVerification = mutation({
+  args: { orgId: v.id("orgs"), listingId: v.id("listings") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    await requireOrgMember(ctx, user, args.orgId);
+    const listing = await requireListingInOrg(
+      ctx,
+      args.orgId,
+      args.listingId,
+    );
+    assertListingFieldsComplete(listing);
+    const status = effectiveVerificationStatus(listing);
+    if (status === "pending_review") {
+      throw new Error("Listing is already pending review");
+    }
+    if (status === "approved" && listing.published) {
+      throw new Error("Published listings cannot be re-submitted");
+    }
+    await ctx.db.patch(args.listingId, {
+      verificationStatus: "pending_review",
+      verificationNote: undefined,
+    });
+    return null;
+  },
+});
+
+export const listPendingVerification = query({
+  args: {},
+  returns: v.array(
+    v.object({
+      _id: v.id("listings"),
+      orgId: v.id("orgs"),
+      orgName: v.string(),
+      title: v.string(),
+      city: v.string(),
+      state: v.string(),
+      rentCents: v.number(),
+      photoUrls: v.array(v.string()),
+      verificationStatus: listingVerificationStatus,
+    }),
+  ),
+  handler: async (ctx) => {
+    await requirePlatformAdmin(ctx);
+    const pending = await ctx.db
+      .query("listings")
+      .withIndex("by_verificationStatus", (q) =>
+        q.eq("verificationStatus", "pending_review"),
+      )
+      .collect();
+
+    const rows = [];
+    for (const listing of pending) {
+      const org = await ctx.db.get(listing.orgId);
+      rows.push({
+        _id: listing._id,
+        orgId: listing.orgId,
+        orgName: org?.name ?? "Unknown org",
+        title: listing.title,
+        city: listing.city,
+        state: listing.state,
+        rentCents: listing.rentCents,
+        photoUrls: listing.photoUrls,
+        verificationStatus: "pending_review" as const,
+      });
+    }
+    return rows;
+  },
+});
+
+export const approveListing = mutation({
+  args: {
+    listingId: v.id("listings"),
+    adminNote: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requirePlatformAdmin(ctx);
+    const listing = await ctx.db.get(args.listingId);
+    if (!listing) {
+      throw new Error("Listing not found");
+    }
+    if (effectiveVerificationStatus(listing) !== "pending_review") {
+      throw new Error("Listing is not pending review");
+    }
+    await ctx.db.patch(args.listingId, {
+      verificationStatus: "approved",
+      verificationNote: args.adminNote?.trim() || undefined,
+    });
+    return null;
+  },
+});
+
+export const denyListing = mutation({
+  args: {
+    listingId: v.id("listings"),
+    adminNote: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requirePlatformAdmin(ctx);
+    const listing = await ctx.db.get(args.listingId);
+    if (!listing) {
+      throw new Error("Listing not found");
+    }
+    if (effectiveVerificationStatus(listing) !== "pending_review") {
+      throw new Error("Listing is not pending review");
+    }
+    await ctx.db.patch(args.listingId, {
+      verificationStatus: "denied",
+      verificationNote: args.adminNote?.trim() || undefined,
+      published: false,
     });
     return null;
   },
@@ -313,18 +480,12 @@ export const publish = mutation({
         "Stripe Connect onboarding must be complete before publishing",
       );
     }
-    if (
-      !listing.title.trim() ||
-      !listing.city.trim() ||
-      !listing.state.trim() ||
-      !listing.zip.trim() ||
-      listing.rentCents <= 0 ||
-      listing.photoUrls.length < 1
-    ) {
+    if (effectiveVerificationStatus(listing) !== "approved") {
       throw new Error(
-        "Listing needs title, rent, city, state, zip, and at least one photo",
+        "Listing must be approved by platform review before publishing",
       );
     }
+    assertListingFieldsComplete(listing);
     await ctx.db.patch(args.listingId, { published: true });
     return null;
   },
