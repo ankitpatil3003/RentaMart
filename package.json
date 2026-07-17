@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test e2e/public-listings.spec.ts e2e/layer3-smoke.spec.ts e2e/layer4-smoke.spec.ts e2e/layer5-smoke.spec.ts e2e/trust-path-smoke.spec.ts",
+    "test:e2e:trust": "cross-env E2E_TRUST=1 playwright test e2e/trust-path.spec.ts",
     "check": "npm run lint && npm run typecheck"
   },
   "dependencies": {
@@ -24,12 +25,14 @@
     "stripe": "^22.3.1"
   },
   "devDependencies": {
+    "@clerk/testing": "^2.2.10",
     "@convex-dev/eslint-plugin": "^2.0.0",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",

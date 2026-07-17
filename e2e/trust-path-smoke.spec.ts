@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 
 /**
  * Smoke coverage for the trust gates (landlord request/approve + listing
- * review) and team invite surfaces. Full authenticated golden path needs
- * Clerk + Convex fixtures; these assert route protection and public CTAs.
+ * review) and team invite surfaces. Authenticated golden path lives in
+ * `trust-path.spec.ts` (set E2E_TRUST=1).
  */
 test.describe("Trust path smoke", () => {
   test("homepage links to become a landlord", async ({ page }) => {
