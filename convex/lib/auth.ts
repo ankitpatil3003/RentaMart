@@ -43,6 +43,16 @@ export function userHasRole(
   return user.roles.includes(role);
 }
 
+export async function requirePlatformAdmin(
+  ctx: Ctx,
+): Promise<Doc<"users">> {
+  const user = await requireUser(ctx);
+  if (!userHasRole(user, "platform_admin")) {
+    throw new Error("platform_admin role required");
+  }
+  return user;
+}
+
 export async function requireOrgMember(
   ctx: Ctx,
   user: Doc<"users">,

@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
-import { useMutation, useQuery } from "convex/react";
-import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { useQuery } from "convex/react";
+import { useEffect, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Show } from "@clerk/nextjs";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -11,52 +11,6 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { LandlordNav } from "@/components/landlord/LandlordNav";
 import { landlordApi } from "@/lib/landlord/api";
 import { withOrgId } from "@/lib/landlord/paths";
-
-function CreateOrgForm() {
-  const create = useMutation(landlordApi.orgs.create);
-  const router = useRouter();
-  const pathname = usePathname();
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    startTransition(async () => {
-      try {
-        const orgId = await create({ name: name.trim() });
-        router.replace(withOrgId(pathname, orgId));
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Could not create organization",
-        );
-      }
-    });
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="mt-8 grid max-w-md gap-4">
-      <label className="block text-sm text-neutral-600">
-        Organization name
-        <input
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="mt-1 w-full border border-neutral-300 px-3 py-2 outline-none focus:border-neutral-900"
-        />
-      </label>
-      {error ? <p className="text-sm text-red-700">{error}</p> : null}
-      <button
-        type="submit"
-        disabled={isPending}
-        className="rounded-md bg-neutral-900 px-5 py-3 text-white disabled:opacity-50"
-      >
-        {isPending ? "Creating…" : "Create organization"}
-      </button>
-    </form>
-  );
-}
 
 function OrgSwitcher({
   orgs,
@@ -113,7 +67,12 @@ function LandlordShell({ children }: { children: ReactNode }) {
   }, [orgs, orgIdParam]);
 
   useEffect(() => {
-    if (!orgs || orgs.length === 0 || !selectedOrgId) return;
+    if (orgs === undefined) return;
+    if (orgs.length === 0) {
+      router.replace("/become-landlord");
+      return;
+    }
+    if (!selectedOrgId) return;
     if (orgIdParam !== selectedOrgId) {
       router.replace(withOrgId(pathname, selectedOrgId));
     }
@@ -125,15 +84,9 @@ function LandlordShell({ children }: { children: ReactNode }) {
 
   if (orgs.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-12">
-        <h1 className="text-4xl font-semibold tracking-tight text-neutral-900">
-          Landlord portal
-        </h1>
-        <p className="mt-2 text-neutral-600">
-          Create an organization to manage listings and applications.
-        </p>
-        <CreateOrgForm />
-      </div>
+      <p className="px-6 py-12 text-neutral-600">
+        Redirecting to landlord access request…
+      </p>
     );
   }
 

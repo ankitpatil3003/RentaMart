@@ -10,7 +10,38 @@ US-only hybrid rental marketplace: public renter search/apply plus landlord ops.
 
 Next.js (App Router), Convex, Clerk, Stripe Connect (test mode).
 
-## Setup
+## Try the live demo (visitors)
+
+RentaMart is intended for **Stripe test mode**. No real money moves. Anyone can sign up and walk the flow with Stripe’s test card.
+
+### Test card (always)
+
+| Field | Value |
+| ----- | ----- |
+| Card number | `4242 4242 4242 4242` |
+| Expiry | Any future date (e.g. `12/34`) |
+| CVC | Any 3 digits (e.g. `123`) |
+| ZIP | Any (e.g. `10001`) |
+
+Decline / other scenarios: [Stripe testing cards](https://docs.stripe.com/testing#cards).
+
+### Suggested walkthrough
+
+1. Open the deployed site (your Vercel URL, e.g. `https://rentamart.vercel.app`).
+2. **Sign up / Sign in** with Clerk (email is fine).
+3. **Browse listings** → open one → **Apply**.
+4. Pay the **application fee** with `4242…`. Wait for status **Under review** (or click **Refresh payment status** if webhooks lag).
+5. As a **landlord** (use a second account that a `platform_admin` approved via `/become-landlord`, or a seeded Demo Homes membership):
+   - Complete **Stripe Connect** test onboarding (Connect → use Stripe’s test “skip verification” / provided test data).
+   - Create/edit a listing → **Submit for review** → admin approves at `/admin/listings` → **Publish**.
+   - **Approve** the application.
+6. As the **renter**, pay **deposit**, then **first month** (again with `4242…`). Status becomes **Qualified**.
+7. As the **landlord**, open Applications → **Select as tenant**. Winner becomes move-in ready; other paid applicants get deposit/first-month refunds (application fee stays non-refundable).
+8. Try **Messages**, **Rent**, and **Maintenance** after move-in ready / moved in.
+
+> Operators: seed demo listings after first deploy (see [Seed after deploy](#seed-after-deploy) below). Without seed data, renters will see an empty listings page.
+
+## Setup (local)
 
 1. Clone and install:
 
@@ -57,22 +88,25 @@ npx convex env set NEXT_PUBLIC_APP_URL http://localhost:3000
 
 Keep `stripe listen` running while testing payments. Without it, Checkout can succeed in Stripe but your application status will stay stuck until you click **Refresh payment status** on the application page.
 
-5. Seed demo listings:
+5. Bootstrap platform admin and seed demo listings:
+
+Promote your user to `platform_admin` once via the Convex dashboard (patch
+`users.roles` to include `"platform_admin"`), or run:
 
 ```bash
-npx convex env set SEED_ALLOW_UNAUTH true
-# optional: attach current landlord to demo org on seed
-# npx convex env set SEED_LANDLORD_CLERK_ID user_...
+npx convex run internal.seed.promoteUserToPlatformAdmin '{"clerkUserId":"user_..."}'
 ```
 
-Sign in, call `seed:promoteSelfToPlatformAdmin` and `seed:demo`. Prefer turning `SEED_ALLOW_UNAUTH` back off after bootstrap.
+Then sign in and run `seed:demo` (requires `platform_admin`). Never leave a
+public self-promote mutation enabled in production.
 
-6. Landlord portal
+6. Landlord portal (request and approve)
 
-- Visit `/landlord` after sign-in
-- Create an organization (or use seeded Demo Homes LLC membership)
-- Complete Stripe Connect test onboarding under Connect
-- Create and publish listings (publish requires Connect ready)
+- Signed-in users request access at `/become-landlord` (org name + documents)
+- A `platform_admin` reviews at `/admin/landlord-requests` and approves or denies
+- After approval, open `/landlord`, complete Stripe Connect under Connect
+- Create a listing draft, **Submit for review**, wait for `/admin/listings` approval
+- Publish (requires authenticity approval **and** Connect ready)
 - Review applications in Applications inbox after renters pay the application fee
 
 7. Optional AI:
@@ -134,43 +168,149 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on pushes and PRs to `develop` 
 
 Add those under **Settings → Secrets and variables → Actions**.
 
-## Deploy (Vercel + Convex)
+## Deploy (Vercel + Convex) — first-time checklist
 
-### One-time Vercel setup
+Your Vercel home page only lists projects you already created. **RentaMart is a new project** — use **Add New… → Project**, not an old app.
 
-1. Import `ankitpatil3003/RentaMart` in the [Vercel dashboard](https://vercel.com/new).
-2. Framework: Next.js (see `vercel.json`).
-3. Production branch: `main`. Preview deployments run on every PR.
-4. Set environment variables on Vercel (Production + Preview) from `.env.example`:
-   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
-   - `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL`
-   - `NEXT_PUBLIC_APP_URL` (your Vercel URL, e.g. `https://rentamart.vercel.app`)
-   - Stripe test keys as needed for demo payments
-5. Redeploy after env changes.
+Do this in order: Convex production → Clerk URLs → Stripe webhook → Vercel import → seed.
 
-### Convex production
+### 1. Convex production deployment
 
-Use a separate Convex **production** deployment (not your local `npx convex dev` deployment):
+On your machine, from the repo root (logged into Convex):
 
 ```bash
 npx convex deploy
 ```
 
-Or, so Vercel always ships matching functions/schema, set `CONVEX_DEPLOY_KEY` on Vercel and change the Vercel build command to:
+When prompted, create/select a **production** deployment (separate from your local `npx convex dev` one).
+
+Copy from the Convex dashboard:
+
+- **Deployment URL** → `NEXT_PUBLIC_CONVEX_URL` (looks like `https://happy-animal-123.convex.cloud`)
+- **HTTP Actions URL** → `NEXT_PUBLIC_CONVEX_SITE_URL` (looks like `https://happy-animal-123.convex.site`)
+
+Set Stripe + app URL on that **production** deployment:
 
 ```bash
-npx convex deploy --cmd 'npm run build'
+npx convex env set STRIPE_SECRET_KEY sk_test_...
+npx convex env set NEXT_PUBLIC_APP_URL https://YOUR-VERCEL-URL.vercel.app
 ```
 
-Point Stripe webhooks at `https://YOUR_PROD_DEPLOYMENT.convex.site/stripe/webhook` and set `STRIPE_WEBHOOK_SECRET` / `STRIPE_SECRET_KEY` on that Convex deployment (`npx convex env set ...` with the production deploy selected).
+(You will set `STRIPE_WEBHOOK_SECRET` after creating the Stripe webhook in step 3.)
+
+Optional: create a [Convex deploy key](https://dashboard.convex.dev) and later set `CONVEX_DEPLOY_KEY` on Vercel so builds run `npx convex deploy --cmd 'npm run build'`.
+
+### 2. Clerk (allow the Vercel domain)
+
+In [Clerk Dashboard](https://dashboard.clerk.com) → your application:
+
+1. Confirm a JWT template named **`convex`** exists (required by `convex/auth.config.ts`).
+2. **Paths:** sign-in `/sign-in`, sign-up `/sign-up` (already in `.env.example`).
+3. After you know the Vercel URL, under **Domains / Allowed origins / Redirect URLs**, add:
+   - `https://YOUR-PROJECT.vercel.app`
+   - `https://YOUR-PROJECT.vercel.app/sign-in`
+   - `https://YOUR-PROJECT.vercel.app/sign-up`
+   - (and Clerk’s suggested callback URLs for that host)
+
+Copy:
+
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (`pk_test_…` or `pk_live_…` — use **test** for demos)
+- `CLERK_SECRET_KEY` (`sk_test_…`)
+
+### 3. Stripe test mode webhook (production Convex)
+
+In [Stripe Dashboard](https://dashboard.stripe.com) → **Test mode** ON:
+
+1. **Developers → Webhooks → Add endpoint**
+2. Endpoint URL:
+
+```text
+https://YOUR_PROD_DEPLOYMENT.convex.site/stripe/webhook
+```
+
+3. Events to send (minimum):
+   - `checkout.session.completed`
+   - `checkout.session.async_payment_failed`
+   - `checkout.session.expired`
+   - `account.updated` (Connect)
+4. Copy the signing secret (`whsec_…`) and set it on Convex production:
+
+```bash
+npx convex env set STRIPE_WEBHOOK_SECRET whsec_...
+```
+
+Also keep `STRIPE_SECRET_KEY` as a **test** key (`sk_test_…`). Visitors will pay with `4242 4242 4242 4242`.
+
+### 4. Create the Vercel project (new, not your old one)
+
+1. Open [vercel.com/dashboard](https://vercel.com/dashboard).
+2. Click **Add New…** → **Project** (top right). Do not open your old project.
+3. **Import Git Repository** → choose `ankitpatil3003/RentaMart`  
+   (If missing: **Adjust GitHub App Permissions** and grant access to this repo.)
+4. Configure:
+   - **Framework Preset:** Next.js
+   - **Root Directory:** `.` (repo root)
+   - **Production Branch:** `main`
+5. **Environment Variables** → add for **Production** and **Preview**:
+
+| Name | Value |
+| ---- | ----- |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | from Clerk |
+| `CLERK_SECRET_KEY` | from Clerk |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | `/sign-in` |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | `/sign-up` |
+| `NEXT_PUBLIC_CONVEX_URL` | Convex production deployment URL |
+| `NEXT_PUBLIC_CONVEX_SITE_URL` | Convex HTTP Actions / `.site` URL |
+| `NEXT_PUBLIC_APP_URL` | temporary `https://placeholder.vercel.app`, then update after first deploy |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_…` (optional on web if unused in UI) |
+
+6. Click **Deploy**. Wait for the build to finish.
+7. Copy the real URL (e.g. `https://renta-mart-xxxx.vercel.app`).
+8. Update:
+   - Vercel env `NEXT_PUBLIC_APP_URL` → that URL → **Redeploy**
+   - Convex: `npx convex env set NEXT_PUBLIC_APP_URL https://your-real-url.vercel.app`
+   - Clerk allowed origins / redirect URLs for that host
+9. Share the Vercel URL. Visitors follow [Try the live demo](#try-the-live-demo-visitors).
+
+### Seed after deploy
+
+With the production Convex deployment selected, promote yourself to
+`platform_admin` once (Convex dashboard patch on `users.roles`, or):
+
+```bash
+npx convex run internal.seed.promoteUserToPlatformAdmin '{"clerkUserId":"user_..."}'
+```
+
+Then run `seed:demo` as that admin. Optional:
+
+```bash
+npx convex env set SEED_LANDLORD_CLERK_ID user_...
+```
+
+Do **not** use `SEED_ALLOW_UNAUTH` in production. Self-serve org creation is
+disabled; landlords onboard via `/become-landlord` → admin approve.
+
+Create/publish a listing as landlord: Connect onboarding → submit listing for
+authenticity review → admin approve at `/admin/listings` → Publish.
 
 ### Local vs production
 
-| Concern | Local | Production demo |
-| ------- | ----- | --------------- |
-| Convex | `npx convex dev` | `npx convex deploy` / deploy key |
-| Web | `npm run dev:web` | Vercel |
-| Stripe webhooks | Stripe CLI → Convex `.site` URL | Stripe Dashboard → Convex `.site` URL |
+| Concern | Local | Public demo |
+| ------- | ----- | ----------- |
+| Convex | `npx convex dev` | `npx convex deploy` |
+| Web | `npm run dev:web` | Vercel (new project from GitHub) |
+| Stripe webhooks | Stripe CLI → Convex `.site` URL | Stripe Dashboard endpoint → Convex `.site` URL |
+| Payments | Test card `4242…` | Same test card `4242…` |
+
+### Troubleshooting
+
+| Symptom | Fix |
+| ------- | --- |
+| Vercel only shows an old project | **Add New… → Project** and import `RentaMart` from GitHub |
+| Build fails on missing env | Add all table vars above, then Redeploy |
+| Clerk “redirect” / auth errors | Add the Vercel domain to Clerk allowlists |
+| Payment succeeds in Stripe but status stuck | Webhook URL wrong or `STRIPE_WEBHOOK_SECRET` missing on Convex; use **Refresh payment status** |
+| Empty listings | Run seed + publish a Connect-ready listing |
 
 ## Layers
 

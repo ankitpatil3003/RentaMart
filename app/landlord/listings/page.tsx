@@ -32,7 +32,8 @@ export default function LandlordListingsPage() {
             Listings
           </h2>
           <p className="mt-2 text-neutral-600">
-            Draft, edit, and publish when Connect is ready.
+            Draft, submit for authenticity review, then publish when Connect is
+            ready.
           </p>
         </div>
         <Link
@@ -61,7 +62,15 @@ export default function LandlordListingsPage() {
                 <p className="mt-1 text-sm text-neutral-600">
                   {listing.city}, {listing.state} ·{" "}
                   {formatUsdFromCents(listing.rentCents)} ·{" "}
-                  {listing.published ? "Published" : "Draft"}
+                  {listing.published
+                    ? "Published"
+                    : listing.verificationStatus === "pending_review"
+                      ? "Pending review"
+                      : listing.verificationStatus === "approved"
+                        ? "Approved (unpublished)"
+                        : listing.verificationStatus === "denied"
+                          ? "Denied"
+                          : "Draft"}
                 </p>
               </li>
             ))}

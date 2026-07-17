@@ -8,6 +8,7 @@ import {
 import {
   requireOrgMember,
   requireOrgRole,
+  requirePlatformAdmin,
   requireUser,
   userHasRole,
 } from "./lib/auth";
@@ -27,10 +28,13 @@ const orgSummary = v.object({
 });
 
 export const create = mutation({
-  args: { name: v.string() },
+  args: {
+    name: v.string(),
+    ownerUserId: v.optional(v.id("users")),
+  },
   returns: v.id("orgs"),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
+    await requirePlatformAdmin(ctx);
     const name = args.name.trim();
     if (!name) {
       throw new Error("Organization name is required");
@@ -40,16 +44,24 @@ export const create = mutation({
       name,
       connectReady: false,
     });
-    await ctx.db.insert("orgMembers", {
-      orgId,
-      userId: user._id,
-      role: "org_owner",
-    });
-    if (!userHasRole(user, "org_owner")) {
-      await ctx.db.patch(user._id, {
-        roles: [...user.roles, "org_owner"],
+
+    if (args.ownerUserId) {
+      const owner = await ctx.db.get(args.ownerUserId);
+      if (!owner) {
+        throw new Error("Owner user not found");
+      }
+      await ctx.db.insert("orgMembers", {
+        orgId,
+        userId: owner._id,
+        role: "org_owner",
       });
+      if (!userHasRole(owner, "org_owner")) {
+        await ctx.db.patch(owner._id, {
+          roles: [...owner.roles, "org_owner"],
+        });
+      }
     }
+
     return orgId;
   },
 });
