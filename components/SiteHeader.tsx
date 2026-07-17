@@ -39,6 +39,10 @@ export function SiteHeader() {
     api.applications.listMine,
     isAuthenticated ? {} : "skip",
   );
+  const pendingInvites = useQuery(
+    api.orgInvites.listPendingForMe,
+    isAuthenticated ? {} : "skip",
+  );
   const hasOrgs = Boolean(orgs && orgs.length > 0);
   const isPlatformAdmin = Boolean(me?.roles.includes("platform_admin"));
   const hasLease = Boolean(leases && leases.length > 0);
@@ -49,6 +53,7 @@ export function SiteHeader() {
           (a) => a.status !== "draft" && a.status !== "canceled",
         )),
   );
+  const inviteCount = pendingInvites?.length ?? 0;
 
   return (
     <header className="border-b border-neutral-200 bg-white/80 backdrop-blur">
@@ -104,6 +109,17 @@ export function SiteHeader() {
                 className="text-neutral-700 hover:text-neutral-900"
               >
                 Maintenance
+              </Link>
+            ) : null}
+          </Show>
+          <Show when="signed-in">
+            {inviteCount > 0 ? (
+              <Link
+                href="/invites"
+                className="text-neutral-700 hover:text-neutral-900"
+              >
+                Invites
+                <UnreadBadge count={inviteCount} />
               </Link>
             ) : null}
           </Show>

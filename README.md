@@ -105,6 +105,7 @@ public self-promote mutation enabled in production.
 - Signed-in users request access at `/become-landlord` (org name + documents)
 - A `platform_admin` reviews at `/admin/landlord-requests` and approves or denies
 - After approval, open `/landlord`, complete Stripe Connect under Connect
+- Invite leasing agents from **Team** (`/landlord/team`); invitees accept at `/invites`
 - Create a listing draft, **Submit for review**, wait for `/admin/listings` approval
 - Publish (requires authenticity approval **and** Connect ready)
 - Review applications in Applications inbox after renters pay the application fee

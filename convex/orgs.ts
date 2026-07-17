@@ -125,13 +125,12 @@ export const get = query({
 });
 
 /**
- * Invite a leasing agent. Invitee must already have completed landlord
- * verification (approved request or existing org membership) so this cannot
- * mint portal access for arbitrary renters.
+ * @deprecated Use orgInvites.create (pending invite + accept). Kept for
+ * compatibility: creates a pending invite instead of immediate membership.
  */
 export const inviteMember = mutation({
   args: { orgId: v.id("orgs"), email: v.string() },
-  returns: v.id("orgMembers"),
+  returns: v.id("orgInvites"),
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     await requireOrgRole(ctx, user, args.orgId, ["org_owner"]);
@@ -145,7 +144,10 @@ export const inviteMember = mutation({
       .withIndex("by_email", (q) => q.eq("email", email))
       .unique();
     if (!invitee) {
-      throw new Error("No user found with that email");
+      throw new Error("No user found with that email. They must sign up first.");
+    }
+    if (invitee._id === user._id) {
+      throw new Error("You cannot invite yourself");
     }
 
     const inviteeMemberships = await ctx.db
@@ -165,20 +167,36 @@ export const inviteMember = mutation({
       );
     }
 
-    const existing = await ctx.db
+    const existingMember = await ctx.db
       .query("orgMembers")
       .withIndex("by_org_and_user", (q) =>
         q.eq("orgId", args.orgId).eq("userId", invitee._id),
       )
       .unique();
-    if (existing) {
-      return existing._id;
+    if (existingMember) {
+      throw new Error("User is already a member of this organization");
     }
 
-    return await ctx.db.insert("orgMembers", {
+    const pending = (
+      await ctx.db
+        .query("orgInvites")
+        .withIndex("by_org_and_email", (q) =>
+          q.eq("orgId", args.orgId).eq("email", email),
+        )
+        .collect()
+    ).find((row) => row.status === "pending");
+    if (pending) {
+      return pending._id;
+    }
+
+    return await ctx.db.insert("orgInvites", {
       orgId: args.orgId,
-      userId: invitee._id,
+      email,
+      inviteeUserId: invitee._id,
+      invitedByUserId: user._id,
       role: "leasing_agent",
+      status: "pending",
+      createdAt: Date.now(),
     });
   },
 });
