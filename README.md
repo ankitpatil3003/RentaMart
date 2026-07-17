@@ -6,6 +6,8 @@ US-only hybrid rental marketplace: public renter search/apply plus landlord ops.
 
 **Layer 6:** GitHub Actions CI and Vercel deploy docs for previews and production demos.
 
+See [CHANGELOG.md](./CHANGELOG.md) for release history.
+
 ## Stack
 
 Next.js (App Router), Convex, Clerk, Stripe Connect (test mode).
