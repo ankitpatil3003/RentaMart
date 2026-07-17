@@ -139,6 +139,7 @@ Webhooks own paid state. UI never marks payments paid alone.
 | `npm run build` | Production Next.js build |
 | `npm run test:e2e` | All Playwright tests |
 | `npm run test:e2e:smoke` | Public + auth-redirect smoke tests |
+| `npm run test:e2e:trust` | Authenticated trust-path golden (needs Clerk + `E2E_MODE`) |
 
 ## E2E
 
@@ -152,9 +153,33 @@ Public smoke tests run without Stripe. Full paths:
 - `E2E_FULL=1` Layer 1 fee path
 - `E2E_LAYER2=1` Layer 2 through move_in_ready
 - `E2E_LAYER2_WEBHOOK_REPLAY=1` deposit replay
+- `E2E_TRUST=1` authenticated trust path (become-landlord → admin approve → listing review → publish)
 - Layer 3 smoke (`e2e/layer3-smoke.spec.ts`) runs by default (auth redirects)
 - Layer 4 smoke (`e2e/layer4-smoke.spec.ts`) landlord applications auth
 - Layer 5 smoke (`e2e/layer5-smoke.spec.ts`) notifications auth
+- Trust-path route smoke (`e2e/trust-path-smoke.spec.ts`) runs in `test:e2e:smoke`
+
+### Authenticated trust-path E2E
+
+```bash
+# Dev Convex only — never on production
+npx convex env set E2E_MODE true
+
+# Promote admin test user once (Clerk user id from dashboard)
+npx convex run internal.seed.promoteUserToPlatformAdmin '{"clerkUserId":"user_..."}'
+```
+
+Create two Clerk **dev** users (prefer `+clerk_test` emails). Then:
+
+```bash
+# PowerShell
+$env:E2E_TRUST='1'
+$env:E2E_CLERK_APPLICANT_EMAIL='landlord+clerk_test@example.com'
+$env:E2E_CLERK_ADMIN_EMAIL='admin+clerk_test@example.com'
+npm run test:e2e:trust
+```
+
+Requires app + `npx convex dev` running against the same deployment as `NEXT_PUBLIC_CONVEX_URL`. Publish skips Stripe onboarding via `e2eHelpers.markOrgConnectReady` when `E2E_MODE=true`.
 
 ## CI
 

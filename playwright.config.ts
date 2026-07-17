@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const trustEnabled = process.env.E2E_TRUST === "1";
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -11,12 +13,26 @@ export default defineConfig({
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
     trace: "on-first-retry",
   },
-  projects: [
-    {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
-    },
-  ],
+  projects: trustEnabled
+    ? [
+        {
+          name: "clerk-setup",
+          testMatch: /clerk\.setup\.ts/,
+        },
+        {
+          name: "chromium",
+          use: { ...devices["Desktop Chrome"] },
+          testIgnore: /clerk\.setup\.ts/,
+          dependencies: ["clerk-setup"],
+        },
+      ]
+    : [
+        {
+          name: "chromium",
+          use: { ...devices["Desktop Chrome"] },
+          testIgnore: /clerk\.setup\.ts/,
+        },
+      ],
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined
     : {
