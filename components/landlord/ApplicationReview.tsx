@@ -1,11 +1,13 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { FormEvent, useState, useTransition } from "react";
+import { FormEvent, useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { Id } from "@/convex/_generated/dataModel";
 import { landlordApi } from "@/lib/landlord/api";
 import { statusLabel } from "@/lib/format";
 import { ScreeningStubPanel } from "@/components/landlord/ScreeningStubPanel";
+import { withOrgId } from "@/lib/landlord/paths";
 
 function PaymentBadges({
   payments,
@@ -50,17 +52,24 @@ export function ApplicationReview({
   const selectApplicant = useMutation(landlordApi.applications.selectApplicant);
   const markMoved = useMutation(landlordApi.applications.markMoved);
   const processRefund = useMutation(landlordApi.refunds.processForApplication);
+  const router = useRouter();
   const [denyReason, setDenyReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (review === null) {
+      router.replace(withOrgId("/landlord/applications", orgId));
+    }
+  }, [review, router, orgId]);
 
   if (review === undefined) {
     return <p className="mt-8 text-neutral-600">Loading application…</p>;
   }
 
   if (review === null) {
-    return <p className="mt-8 text-neutral-600">Application not found.</p>;
+    return <p className="mt-8 text-neutral-600">Redirecting…</p>;
   }
 
   const canDecide =

@@ -6,10 +6,10 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
 import { usePathname } from "next/navigation";
 import { withOrgId } from "@/lib/landlord/paths";
+import { landlordApi } from "@/lib/landlord/api";
 
-const links = [
+const baseLinks = [
   { href: "/landlord", label: "Dashboard", exact: true },
-  { href: "/landlord/connect", label: "Connect" },
   { href: "/landlord/listings", label: "Listings" },
   { href: "/landlord/applications", label: "Applications" },
   { href: "/landlord/notifications", label: "Notifications" },
@@ -21,6 +21,17 @@ const links = [
 export function LandlordNav({ orgId }: { orgId: Id<"orgs"> }) {
   const pathname = usePathname();
   const unreadCount = useQuery(api.notifications.unreadCount, { orgId });
+  const orgs = useQuery(landlordApi.orgs.listMine);
+  const role = orgs?.find((o) => o._id === orgId)?.role;
+  const isOwner = role === "org_owner";
+
+  const links = isOwner
+    ? [
+        baseLinks[0],
+        { href: "/landlord/connect", label: "Connect" } as const,
+        ...baseLinks.slice(1),
+      ]
+    : [...baseLinks];
 
   return (
     <nav className="flex flex-wrap gap-4 border-b border-neutral-200 pb-4 text-sm">

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode } from "react";
-import { usePathname } from "next/navigation";
+import { type ReactNode, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { Show } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
@@ -39,6 +39,14 @@ function AdminNav() {
 
 function AdminShell({ children }: { children: ReactNode }) {
   const me = useQuery(api.users.me);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (me === undefined) return;
+    if (!me || !me.roles.includes("platform_admin")) {
+      router.replace("/");
+    }
+  }, [me, router]);
 
   if (me === undefined) {
     return <p className="px-6 py-12 text-neutral-600">Loading…</p>;
@@ -46,18 +54,7 @@ function AdminShell({ children }: { children: ReactNode }) {
 
   if (!me || !me.roles.includes("platform_admin")) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-12">
-        <h1 className="text-2xl font-semibold text-neutral-900">Admin</h1>
-        <p className="mt-2 text-neutral-600">
-          Platform admin access required. Bootstrap the first admin by patching
-          your user&apos;s <code className="text-sm">roles</code> in the Convex
-          dashboard, or run{" "}
-          <code className="text-sm">
-            internal.seed.promoteUserToPlatformAdmin
-          </code>
-          .
-        </p>
-      </div>
+      <p className="px-6 py-12 text-neutral-600">Redirecting…</p>
     );
   }
 

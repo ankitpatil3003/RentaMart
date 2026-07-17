@@ -50,7 +50,14 @@ export const generateUploadUrl = mutation({
   args: {},
   returns: v.string(),
   handler: async (ctx) => {
-    await requireUser(ctx);
+    const user = await requireUser(ctx);
+    const memberships = await ctx.db
+      .query("orgMembers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    if (memberships.length > 0) {
+      throw new Error("You already have landlord access");
+    }
     return await ctx.storage.generateUploadUrl();
   },
 });

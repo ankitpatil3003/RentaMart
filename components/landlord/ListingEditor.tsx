@@ -87,6 +87,7 @@ function ListingEditorForm({
   connectReady,
   verificationStatus,
   verificationNote,
+  isOrgOwner,
 }: {
   orgId: Id<"orgs">;
   listingId?: Id<"listings">;
@@ -95,6 +96,7 @@ function ListingEditorForm({
   connectReady: boolean;
   verificationStatus: "draft" | "pending_review" | "approved" | "denied";
   verificationNote?: string;
+  isOrgOwner: boolean;
 }) {
   const router = useRouter();
   const createDraft = useMutation(landlordApi.listings.createDraft);
@@ -341,6 +343,7 @@ function ListingEditorForm({
               </p>
             ) : null}
             {!published ? (
+              isOrgOwner ? (
               <button
                 type="button"
                 disabled={
@@ -366,7 +369,12 @@ function ListingEditorForm({
               >
                 Publish
               </button>
-            ) : (
+              ) : (
+                <p className="text-sm text-neutral-600">
+                  Only the organization owner can publish listings.
+                </p>
+              )
+            ) : isOrgOwner ? (
               <button
                 type="button"
                 disabled={isPending}
@@ -388,7 +396,7 @@ function ListingEditorForm({
               >
                 Unpublish
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -402,6 +410,7 @@ export function ListingEditor({ orgId, listingId }: ListingEditorProps) {
     listingId ? { orgId, listingId } : "skip",
   );
   const org = useQuery(landlordApi.orgs.get, { orgId });
+  const orgs = useQuery(landlordApi.orgs.listMine);
 
   if (listingId && existing === undefined) {
     return <p className="mt-8 text-neutral-600">Loading listing…</p>;
@@ -415,6 +424,8 @@ export function ListingEditor({ orgId, listingId }: ListingEditorProps) {
   const published = existing?.published === true;
   const verificationStatus = existing?.verificationStatus ?? "draft";
   const initialForm = existing ? formFromListing(existing) : emptyForm;
+  const isOrgOwner =
+    orgs?.find((row) => row._id === orgId)?.role === "org_owner";
 
   return (
     <ListingEditorForm
@@ -426,6 +437,7 @@ export function ListingEditor({ orgId, listingId }: ListingEditorProps) {
       connectReady={connectReady}
       verificationStatus={verificationStatus}
       verificationNote={existing?.verificationNote}
+      isOrgOwner={isOrgOwner === true}
     />
   );
 }
