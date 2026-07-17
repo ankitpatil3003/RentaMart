@@ -123,6 +123,11 @@ export const screeningAssist = action({
     suggestedQuestions: string[];
     disabled: boolean;
   }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
     if (process.env.AI_ENABLED !== "true") {
       return {
         summary: "AI screening assist is turned off for this environment.",
@@ -137,9 +142,14 @@ export const screeningAssist = action({
       email: string;
       phone: string;
       status: string;
-    } | null = await ctx.runQuery(internal.applications.getScreeningContext, {
-      applicationId: args.applicationId,
-    });
+    } | null = await ctx.runQuery(
+      internal.applications.getScreeningAssistContext,
+      {
+        clerkUserId: identity.subject,
+        applicationId: args.applicationId,
+        reportId: args.reportId,
+      },
+    );
 
     const groqKey = process.env.GROQ_API_KEY;
     const fallbackMissing = ["Government ID", "Recent pay stub"];
@@ -149,13 +159,7 @@ export const screeningAssist = action({
     ];
 
     if (!application) {
-      return {
-        summary:
-          "Review the applicant packet and screening report before deciding.",
-        missingDocs: fallbackMissing,
-        suggestedQuestions: fallbackQuestions,
-        disabled: false,
-      };
+      throw new Error("Unauthorized or screening context not found");
     }
 
     if (!groqKey) {

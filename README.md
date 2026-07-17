@@ -31,8 +31,9 @@ Decline / other scenarios: [Stripe testing cards](https://docs.stripe.com/testin
 2. **Sign up / Sign in** with Clerk (email is fine).
 3. **Browse listings** → open one → **Apply**.
 4. Pay the **application fee** with `4242…`. Wait for status **Under review** (or click **Refresh payment status** if webhooks lag).
-5. As a **landlord** (second account, or the same account after creating an org under `/landlord`):
+5. As a **landlord** (use a second account that a `platform_admin` approved via `/become-landlord`, or a seeded Demo Homes membership):
    - Complete **Stripe Connect** test onboarding (Connect → use Stripe’s test “skip verification” / provided test data).
+   - Create/edit a listing → **Submit for review** → admin approves at `/admin/listings` → **Publish**.
    - **Approve** the application.
 6. As the **renter**, pay **deposit**, then **first month** (again with `4242…`). Status becomes **Qualified**.
 7. As the **landlord**, open Applications → **Select as tenant**. Winner becomes move-in ready; other paid applicants get deposit/first-month refunds (application fee stays non-refundable).
@@ -87,22 +88,25 @@ npx convex env set NEXT_PUBLIC_APP_URL http://localhost:3000
 
 Keep `stripe listen` running while testing payments. Without it, Checkout can succeed in Stripe but your application status will stay stuck until you click **Refresh payment status** on the application page.
 
-5. Seed demo listings:
+5. Bootstrap platform admin and seed demo listings:
+
+Promote your user to `platform_admin` once via the Convex dashboard (patch
+`users.roles` to include `"platform_admin"`), or run:
 
 ```bash
-npx convex env set SEED_ALLOW_UNAUTH true
-# optional: attach current landlord to demo org on seed
-# npx convex env set SEED_LANDLORD_CLERK_ID user_...
+npx convex run internal.seed.promoteUserToPlatformAdmin '{"clerkUserId":"user_..."}'
 ```
 
-Sign in, call `seed:promoteSelfToPlatformAdmin` and `seed:demo`. Prefer turning `SEED_ALLOW_UNAUTH` back off after bootstrap.
+Then sign in and run `seed:demo` (requires `platform_admin`). Never leave a
+public self-promote mutation enabled in production.
 
-6. Landlord portal
+6. Landlord portal (request and approve)
 
-- Visit `/landlord` after sign-in
-- Create an organization (or use seeded Demo Homes LLC membership)
-- Complete Stripe Connect test onboarding under Connect
-- Create and publish listings (publish requires Connect ready)
+- Signed-in users request access at `/become-landlord` (org name + documents)
+- A `platform_admin` reviews at `/admin/landlord-requests` and approves or denies
+- After approval, open `/landlord`, complete Stripe Connect under Connect
+- Create a listing draft, **Submit for review**, wait for `/admin/listings` approval
+- Publish (requires authenticity approval **and** Connect ready)
 - Review applications in Applications inbox after renters pay the application fee
 
 7. Optional AI:
@@ -270,24 +274,24 @@ Also keep `STRIPE_SECRET_KEY` as a **test** key (`sk_test_…`). Visitors will p
 
 ### Seed after deploy
 
-With the production Convex deployment selected:
+With the production Convex deployment selected, promote yourself to
+`platform_admin` once (Convex dashboard patch on `users.roles`, or):
 
 ```bash
-npx convex env set SEED_ALLOW_UNAUTH true
+npx convex run internal.seed.promoteUserToPlatformAdmin '{"clerkUserId":"user_..."}'
 ```
 
-Then in the [Convex dashboard](https://dashboard.convex.dev) → **Functions** (or CLI), run as yourself after signing in once on the live site:
-
-- `seed:promoteSelfToPlatformAdmin`
-- `seed:demo`
-
-Turn seeding off afterward:
+Then run `seed:demo` as that admin. Optional:
 
 ```bash
-npx convex env set SEED_ALLOW_UNAUTH false
+npx convex env set SEED_LANDLORD_CLERK_ID user_...
 ```
 
-Create/publish a listing as landlord and finish **Connect** test onboarding so renters have something to apply to.
+Do **not** use `SEED_ALLOW_UNAUTH` in production. Self-serve org creation is
+disabled; landlords onboard via `/become-landlord` → admin approve.
+
+Create/publish a listing as landlord: Connect onboarding → submit listing for
+authenticity review → admin approve at `/admin/listings` → Publish.
 
 ### Local vs production
 

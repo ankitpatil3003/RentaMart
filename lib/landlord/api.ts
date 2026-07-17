@@ -34,6 +34,8 @@ export type LandlordListing = {
   photoUrls: string[];
   published: boolean;
   applicationFeeCents: number;
+  verificationStatus: "draft" | "pending_review" | "approved" | "denied";
+  verificationNote?: string;
 };
 
 export type OrgApplication = {

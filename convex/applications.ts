@@ -212,6 +212,59 @@ export const getScreeningContext = internalQuery({
   },
 });
 
+/** Authz + PII for landlord AI screening assist. Returns null if unauthorized. */
+export const getScreeningAssistContext = internalQuery({
+  args: {
+    clerkUserId: v.string(),
+    applicationId: v.id("applications"),
+    reportId: v.id("screeningReports"),
+  },
+  returns: v.union(
+    v.object({
+      fullName: v.string(),
+      email: v.string(),
+      phone: v.string(),
+      status: applicationStatus,
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkUserId", (q) =>
+        q.eq("clerkUserId", args.clerkUserId),
+      )
+      .unique();
+    if (!user) return null;
+
+    const application = await ctx.db.get(args.applicationId);
+    if (!application) return null;
+
+    const listing = await ctx.db.get(application.listingId);
+    if (!listing) return null;
+
+    const membership = await ctx.db
+      .query("orgMembers")
+      .withIndex("by_org_and_user", (q) =>
+        q.eq("orgId", listing.orgId).eq("userId", user._id),
+      )
+      .unique();
+    if (!membership) return null;
+
+    const report = await ctx.db.get(args.reportId);
+    if (!report || report.applicationId !== args.applicationId) {
+      return null;
+    }
+
+    return {
+      fullName: application.fullName,
+      email: application.email,
+      phone: application.phone,
+      status: application.status,
+    };
+  },
+});
+
 const inboxApplication = v.object({
   _id: v.id("applications"),
   listingId: v.id("listings"),

@@ -84,6 +84,19 @@ export const notificationType = v.union(
   v.literal("tenant_selected"),
 );
 
+export const listingVerificationStatus = v.union(
+  v.literal("draft"),
+  v.literal("pending_review"),
+  v.literal("approved"),
+  v.literal("denied"),
+);
+
+export const landlordRequestStatus = v.union(
+  v.literal("pending"),
+  v.literal("approved"),
+  v.literal("denied"),
+);
+
 export default defineSchema({
   users: defineTable({
     clerkUserId: v.string(),
@@ -126,10 +139,29 @@ export default defineSchema({
     photoUrls: v.array(v.string()),
     published: v.boolean(),
     applicationFeeCents: v.number(),
+    verificationStatus: v.optional(listingVerificationStatus),
+    verificationNote: v.optional(v.string()),
   })
     .index("by_published", ["published"])
     .index("by_org", ["orgId"])
-    .index("by_city_published", ["city", "published"]),
+    .index("by_city_published", ["city", "published"])
+    .index("by_verificationStatus", ["verificationStatus"]),
+
+  landlordRequests: defineTable({
+    userId: v.id("users"),
+    orgName: v.string(),
+    contactPhone: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    documentStorageIds: v.array(v.id("_storage")),
+    status: landlordRequestStatus,
+    adminNote: v.optional(v.string()),
+    reviewedByUserId: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.number()),
+    createdOrgId: v.optional(v.id("orgs")),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"]),
 
   applications: defineTable({
     listingId: v.id("listings"),
