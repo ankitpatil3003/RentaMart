@@ -27,8 +27,28 @@ export function SiteHeader() {
     api.notifications.unreadCount,
     isAuthenticated ? {} : "skip",
   );
+  const leases = useQuery(
+    api.leases.listMine,
+    isAuthenticated ? {} : "skip",
+  );
+  const messageThreads = useQuery(
+    api.messages.listThreadsForRenter,
+    isAuthenticated ? {} : "skip",
+  );
+  const applications = useQuery(
+    api.applications.listMine,
+    isAuthenticated ? {} : "skip",
+  );
   const hasOrgs = Boolean(orgs && orgs.length > 0);
   const isPlatformAdmin = Boolean(me?.roles.includes("platform_admin"));
+  const hasLease = Boolean(leases && leases.length > 0);
+  const hasMessages = Boolean(
+    (messageThreads && messageThreads.length > 0) ||
+      (applications &&
+        applications.some(
+          (a) => a.status !== "draft" && a.status !== "canceled",
+        )),
+  );
 
   return (
     <header className="border-b border-neutral-200 bg-white/80 backdrop-blur">
@@ -58,25 +78,34 @@ export function SiteHeader() {
             </Link>
           </Show>
           <Show when="signed-in">
-            <Link
-              href="/messages"
-              className="text-neutral-700 hover:text-neutral-900"
-            >
-              Messages
-            </Link>
+            {hasMessages ? (
+              <Link
+                href="/messages"
+                className="text-neutral-700 hover:text-neutral-900"
+              >
+                Messages
+              </Link>
+            ) : null}
           </Show>
           <Show when="signed-in">
-            <Link href="/rent" className="text-neutral-700 hover:text-neutral-900">
-              Rent
-            </Link>
+            {hasLease ? (
+              <Link
+                href="/rent"
+                className="text-neutral-700 hover:text-neutral-900"
+              >
+                Rent
+              </Link>
+            ) : null}
           </Show>
           <Show when="signed-in">
-            <Link
-              href="/maintenance"
-              className="text-neutral-700 hover:text-neutral-900"
-            >
-              Maintenance
-            </Link>
+            {hasLease ? (
+              <Link
+                href="/maintenance"
+                className="text-neutral-700 hover:text-neutral-900"
+              >
+                Maintenance
+              </Link>
+            ) : null}
           </Show>
           <Show when="signed-in">
             {hasOrgs && orgs ? (

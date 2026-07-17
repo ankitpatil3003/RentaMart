@@ -104,8 +104,9 @@ export const get = query({
   returns: v.union(orgDetail, v.null()),
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
+    let membership;
     try {
-      await requireOrgMember(ctx, user, args.orgId);
+      membership = await requireOrgMember(ctx, user, args.orgId);
     } catch {
       return null;
     }
@@ -115,11 +116,19 @@ export const get = query({
       _id: org._id,
       name: org.name,
       connectReady: org.connectReady,
-      stripeConnectAccountId: org.stripeConnectAccountId,
+      stripeConnectAccountId:
+        membership.role === "org_owner"
+          ? org.stripeConnectAccountId
+          : undefined,
     };
   },
 });
 
+/**
+ * Invite a leasing agent. Invitee must already have completed landlord
+ * verification (approved request or existing org membership) so this cannot
+ * mint portal access for arbitrary renters.
+ */
 export const inviteMember = mutation({
   args: { orgId: v.id("orgs"), email: v.string() },
   returns: v.id("orgMembers"),
@@ -137,6 +146,23 @@ export const inviteMember = mutation({
       .unique();
     if (!invitee) {
       throw new Error("No user found with that email");
+    }
+
+    const inviteeMemberships = await ctx.db
+      .query("orgMembers")
+      .withIndex("by_user", (q) => q.eq("userId", invitee._id))
+      .collect();
+    const approvedRequest = (
+      await ctx.db
+        .query("landlordRequests")
+        .withIndex("by_user", (q) => q.eq("userId", invitee._id))
+        .collect()
+    ).find((r) => r.status === "approved");
+
+    if (inviteeMemberships.length === 0 && !approvedRequest) {
+      throw new Error(
+        "Invitee must complete landlord verification before joining an organization",
+      );
     }
 
     const existing = await ctx.db
