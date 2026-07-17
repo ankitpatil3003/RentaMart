@@ -18,6 +18,7 @@ import type * as landlordRequests from "../landlordRequests.js";
 import type * as leases from "../leases.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_customFunctions from "../lib/customFunctions.js";
+import type * as lib_listingTrust from "../lib/listingTrust.js";
 import type * as lib_money from "../lib/money.js";
 import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
 import type * as listings from "../listings.js";
@@ -53,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   leases: typeof leases;
   "lib/auth": typeof lib_auth;
   "lib/customFunctions": typeof lib_customFunctions;
+  "lib/listingTrust": typeof lib_listingTrust;
   "lib/money": typeof lib_money;
   "lib/notificationHelpers": typeof lib_notificationHelpers;
   listings: typeof listings;

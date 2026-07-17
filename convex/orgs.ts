@@ -12,18 +12,24 @@ import {
   requireUser,
   userHasRole,
 } from "./lib/auth";
+import { getOrgListingTrust } from "./lib/listingTrust";
 
 const orgDetail = v.object({
   _id: v.id("orgs"),
   name: v.string(),
   connectReady: v.boolean(),
   stripeConnectAccountId: v.optional(v.string()),
+  listingFastPath: v.boolean(),
+  approvedListingCount: v.number(),
+  deniedListingCount: v.number(),
+  minApprovedForFastPath: v.number(),
 });
 
 const orgSummary = v.object({
   _id: v.id("orgs"),
   name: v.string(),
   connectReady: v.boolean(),
+  listingFastPath: v.boolean(),
   role: v.union(v.literal("org_owner"), v.literal("leasing_agent")),
 });
 
@@ -88,10 +94,12 @@ export const listMine = query({
     for (const membership of memberships) {
       const org = await ctx.db.get(membership.orgId);
       if (!org) continue;
+      const trust = await getOrgListingTrust(ctx, org._id);
       orgs.push({
         _id: org._id,
         name: org.name,
         connectReady: org.connectReady,
+        listingFastPath: trust.eligible,
         role: membership.role,
       });
     }
@@ -112,6 +120,7 @@ export const get = query({
     }
     const org = await ctx.db.get(args.orgId);
     if (!org) return null;
+    const trust = await getOrgListingTrust(ctx, args.orgId);
     return {
       _id: org._id,
       name: org.name,
@@ -120,6 +129,10 @@ export const get = query({
         membership.role === "org_owner"
           ? org.stripeConnectAccountId
           : undefined,
+      listingFastPath: trust.eligible,
+      approvedListingCount: trust.approvedCount,
+      deniedListingCount: trust.deniedCount,
+      minApprovedForFastPath: trust.minApprovedRequired,
     };
   },
 });

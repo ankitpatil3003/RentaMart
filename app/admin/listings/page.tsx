@@ -48,6 +48,10 @@ export default function AdminListingsPage() {
       <h2 className="text-2xl font-semibold tracking-tight text-neutral-900">
         Listing authenticity
       </h2>
+      <p className="text-sm text-neutral-600">
+        Trusted organizations (Connect ready + enough prior approvals, no
+        denials) auto-approve on submit and will not appear here.
+      </p>
       {error ? <p className="text-sm text-red-700">{error}</p> : null}
       {pending.map((row) => (
         <article

@@ -8,6 +8,7 @@ import {
   requirePlatformAdmin,
   requireUser,
 } from "./lib/auth";
+import { getOrgListingTrust } from "./lib/listingTrust";
 import { defaultApplicationFeeCents } from "./lib/money";
 import { listingVerificationStatus } from "./schema";
 
@@ -352,7 +353,10 @@ export const update = mutation({
 
 export const submitForVerification = mutation({
   args: { orgId: v.id("orgs"), listingId: v.id("listings") },
-  returns: v.null(),
+  returns: v.object({
+    verificationStatus: listingVerificationStatus,
+    autoApproved: v.boolean(),
+  }),
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     await requireOrgMember(ctx, user, args.orgId);
@@ -369,11 +373,27 @@ export const submitForVerification = mutation({
     if (status === "approved" && listing.published) {
       throw new Error("Published listings cannot be re-submitted");
     }
+
+    const trust = await getOrgListingTrust(ctx, args.orgId, {
+      excludeListingId: args.listingId,
+    });
+
+    if (trust.eligible) {
+      await ctx.db.patch(args.listingId, {
+        verificationStatus: "approved",
+        verificationNote: `Auto-approved: trusted organization (${trust.approvedCount} prior approved listings)`,
+      });
+      return { verificationStatus: "approved" as const, autoApproved: true };
+    }
+
     await ctx.db.patch(args.listingId, {
       verificationStatus: "pending_review",
       verificationNote: undefined,
     });
-    return null;
+    return {
+      verificationStatus: "pending_review" as const,
+      autoApproved: false,
+    };
   },
 });
 

@@ -8,6 +8,7 @@ export type OrgSummary = {
   _id: Id<"orgs">;
   name: string;
   connectReady: boolean;
+  listingFastPath: boolean;
   role: "org_owner" | "leasing_agent";
 };
 
@@ -16,6 +17,10 @@ export type OrgDetail = {
   name: string;
   connectReady: boolean;
   stripeConnectAccountId?: string;
+  listingFastPath: boolean;
+  approvedListingCount: number;
+  deniedListingCount: number;
+  minApprovedForFastPath: number;
 };
 
 export type LandlordListing = {

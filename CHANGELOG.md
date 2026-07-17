@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Trusted-org listing fast-path: Connect-ready orgs with enough prior approved listings (default 3) and no denials auto-approve authenticity on submit
+- Landlord dashboard shows listing-review trust status; editor copy distinguishes auto-approve vs standard review
+- Convex env `TRUSTED_ORG_MIN_APPROVED_LISTINGS` (optional; default 3)
+
 ## [1.5.0] - 2026-07-17
 
 ### Added
