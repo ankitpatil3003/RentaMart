@@ -78,6 +78,19 @@ export default function LandlordDashboardPage() {
         </div>
         ) : null}
         <div className="border border-neutral-200 bg-white/70 p-5">
+          <p className="text-sm text-neutral-500">Listing review</p>
+          <p className="mt-2 text-lg text-neutral-900">
+            {org.listingFastPath ? "Trusted (auto-approve)" : "Standard review"}
+          </p>
+          <p className="mt-1 text-sm text-neutral-600">
+            {org.approvedListingCount}/{org.minApprovedForFastPath} approved
+            listings
+            {org.deniedListingCount > 0
+              ? ` · ${org.deniedListingCount} denied (fast-path paused)`
+              : ""}
+          </p>
+        </div>
+        <div className="border border-neutral-200 bg-white/70 p-5">
           <p className="text-sm text-neutral-500">Listings</p>
           <p className="mt-2 text-lg text-neutral-900">
             {publishedCount} published · {draftCount} draft

@@ -85,6 +85,9 @@ function ListingEditorForm({
   initialForm,
   published,
   connectReady,
+  listingFastPath,
+  approvedListingCount,
+  minApprovedForFastPath,
   verificationStatus,
   verificationNote,
   isOrgOwner,
@@ -94,6 +97,9 @@ function ListingEditorForm({
   initialForm: FormState;
   published: boolean;
   connectReady: boolean;
+  listingFastPath: boolean;
+  approvedListingCount: number;
+  minApprovedForFastPath: number;
   verificationStatus: "draft" | "pending_review" | "approved" | "denied";
   verificationNote?: string;
   isOrgOwner: boolean;
@@ -108,6 +114,7 @@ function ListingEditorForm({
   );
   const [form, setForm] = useState<FormState>(initialForm);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function field(key: keyof FormState) {
@@ -306,12 +313,31 @@ function ListingEditorForm({
               Complete Stripe Connect onboarding before publishing.
             </p>
           ) : null}
-          {verificationStatus !== "approved" && !published ? (
-            <p className="mt-2 text-sm text-amber-800">
-              Submit for authenticity review. Publish is enabled only after
-              platform approval and Connect readiness.
+          {listingFastPath && !published ? (
+            <p className="mt-2 text-sm text-emerald-800">
+              Trusted organization: new listings auto-approve authenticity
+              review ({approvedListingCount}/{minApprovedForFastPath}+ approved,
+              Connect ready).
             </p>
           ) : null}
+          {!listingFastPath &&
+          verificationStatus !== "approved" &&
+          !published ? (
+            <p className="mt-2 text-sm text-amber-800">
+              Submit for authenticity review. After{" "}
+              {minApprovedForFastPath} approved listings with Connect ready,
+              future listings auto-approve. Publish still requires Connect.
+            </p>
+          ) : null}
+          {listingFastPath &&
+          verificationStatus !== "approved" &&
+          !published ? (
+            <p className="mt-2 text-sm text-amber-800">
+              Submit to auto-approve authenticity, then publish when ready.
+            </p>
+          ) : null}
+          {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
+          {info ? <p className="mt-2 text-sm text-emerald-800">{info}</p> : null}
           <div className="mt-4 flex flex-wrap gap-3">
             {verificationStatus === "draft" ||
             verificationStatus === "denied" ? (
@@ -320,9 +346,18 @@ function ListingEditorForm({
                 disabled={isPending}
                 onClick={() => {
                   setError(null);
+                  setInfo(null);
                   startTransition(async () => {
                     try {
-                      await submitForVerification({ orgId, listingId });
+                      const result = await submitForVerification({
+                        orgId,
+                        listingId,
+                      });
+                      if (result.autoApproved) {
+                        setInfo(
+                          "Listing auto-approved (trusted organization).",
+                        );
+                      }
                     } catch (err) {
                       setError(
                         err instanceof Error
@@ -334,7 +369,9 @@ function ListingEditorForm({
                 }}
                 className="border border-neutral-900 px-5 py-3 text-neutral-900 disabled:opacity-50"
               >
-                Submit for review
+                {listingFastPath
+                  ? "Submit (auto-approve)"
+                  : "Submit for review"}
               </button>
             ) : null}
             {verificationStatus === "pending_review" ? (
@@ -421,6 +458,9 @@ export function ListingEditor({ orgId, listingId }: ListingEditorProps) {
   }
 
   const connectReady = org?.connectReady === true;
+  const listingFastPath = org?.listingFastPath === true;
+  const approvedListingCount = org?.approvedListingCount ?? 0;
+  const minApprovedForFastPath = org?.minApprovedForFastPath ?? 3;
   const published = existing?.published === true;
   const verificationStatus = existing?.verificationStatus ?? "draft";
   const initialForm = existing ? formFromListing(existing) : emptyForm;
@@ -435,6 +475,9 @@ export function ListingEditor({ orgId, listingId }: ListingEditorProps) {
       initialForm={initialForm}
       published={published}
       connectReady={connectReady}
+      listingFastPath={listingFastPath}
+      approvedListingCount={approvedListingCount}
+      minApprovedForFastPath={minApprovedForFastPath}
       verificationStatus={verificationStatus}
       verificationNote={existing?.verificationNote}
       isOrgOwner={isOrgOwner === true}

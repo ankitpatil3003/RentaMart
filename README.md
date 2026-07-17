@@ -109,6 +109,7 @@ public self-promote mutation enabled in production.
 - After approval, open `/landlord`, complete Stripe Connect under Connect
 - Invite leasing agents from **Team** (`/landlord/team`); invitees accept at `/invites`
 - Create a listing draft, **Submit for review**, wait for `/admin/listings` approval
+- Organizations that are Connect-ready with enough prior approved listings (default **3**, Convex env `TRUSTED_ORG_MIN_APPROVED_LISTINGS`) and **no denied** listings get **auto-approve** on submit
 - Publish (requires authenticity approval **and** Connect ready)
 - Review applications in Applications inbox after renters pay the application fee
 
