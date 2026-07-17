@@ -97,6 +97,13 @@ export const landlordRequestStatus = v.union(
   v.literal("denied"),
 );
 
+export const orgInviteStatus = v.union(
+  v.literal("pending"),
+  v.literal("accepted"),
+  v.literal("declined"),
+  v.literal("canceled"),
+);
+
 export default defineSchema({
   users: defineTable({
     clerkUserId: v.string(),
@@ -123,6 +130,21 @@ export default defineSchema({
     .index("by_org", ["orgId"])
     .index("by_user", ["userId"])
     .index("by_org_and_user", ["orgId", "userId"]),
+
+  orgInvites: defineTable({
+    orgId: v.id("orgs"),
+    email: v.string(),
+    inviteeUserId: v.id("users"),
+    invitedByUserId: v.id("users"),
+    role: v.literal("leasing_agent"),
+    status: orgInviteStatus,
+    createdAt: v.number(),
+    respondedAt: v.optional(v.number()),
+  })
+    .index("by_org", ["orgId"])
+    .index("by_invitee", ["inviteeUserId"])
+    .index("by_org_and_email", ["orgId", "email"])
+    .index("by_invitee_and_status", ["inviteeUserId", "status"]),
 
   listings: defineTable({
     orgId: v.id("orgs"),

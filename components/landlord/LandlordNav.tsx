@@ -12,6 +12,7 @@ const baseLinks = [
   { href: "/landlord", label: "Dashboard", exact: true },
   { href: "/landlord/listings", label: "Listings" },
   { href: "/landlord/applications", label: "Applications" },
+  { href: "/landlord/team", label: "Team" },
   { href: "/landlord/notifications", label: "Notifications" },
   { href: "/landlord/messages", label: "Messages" },
   { href: "/landlord/rent", label: "Rent" },
