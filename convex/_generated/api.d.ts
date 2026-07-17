@@ -23,6 +23,7 @@ import type * as listings from "../listings.js";
 import type * as maintenance from "../maintenance.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
+import type * as orgInvites from "../orgInvites.js";
 import type * as orgs from "../orgs.js";
 import type * as orgsActions from "../orgsActions.js";
 import type * as payments from "../payments.js";
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   maintenance: typeof maintenance;
   messages: typeof messages;
   notifications: typeof notifications;
+  orgInvites: typeof orgInvites;
   orgs: typeof orgs;
   orgsActions: typeof orgsActions;
   payments: typeof payments;
