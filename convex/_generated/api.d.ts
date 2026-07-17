@@ -11,6 +11,7 @@
 import type * as ai from "../ai.js";
 import type * as aiActions from "../aiActions.js";
 import type * as applications from "../applications.js";
+import type * as e2eHelpers from "../e2eHelpers.js";
 import type * as emailActions from "../emailActions.js";
 import type * as http from "../http.js";
 import type * as landlordRequests from "../landlordRequests.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   ai: typeof ai;
   aiActions: typeof aiActions;
   applications: typeof applications;
+  e2eHelpers: typeof e2eHelpers;
   emailActions: typeof emailActions;
   http: typeof http;
   landlordRequests: typeof landlordRequests;
